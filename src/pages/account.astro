@@ -1,0 +1,150 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="AlphaMail — Account">
+  <div class="w-full">
+    <div class="w-full max-w-2xl mx-auto px-6 sm:px-8 py-12">
+      <div id="account-container" class="rounded-xl bg-white/80 backdrop-blur-xl shadow-2xl border border-white/20 ring-1 ring-black/5 overflow-hidden flex flex-col w-full text-left">
+        <!-- Window Chrome / Toolbar -->
+        <div class="h-12 bg-gradient-to-b from-[#f6f6f6] to-[#e8e8e8] border-b border-[#d1d1d1] flex items-center justify-between px-4 shadow-[0_1px_0_rgba(255,255,255,0.5)_inset]">
+          <!-- Traffic Lights -->
+          <div class="flex gap-2">
+            <div class="w-3 h-3 rounded-full bg-[#FF5F57] border border-[#E09E3E]/30 shadow-sm"></div>
+            <div class="w-3 h-3 rounded-full bg-[#FEBC2E] border border-[#DFA023]/30 shadow-sm"></div>
+            <div class="w-3 h-3 rounded-full bg-[#28C840] border border-[#1AAB29]/30 shadow-sm"></div>
+          </div>
+          
+          <!-- Buttons -->
+          <div class="flex gap-2">
+            <a
+              href="/billing"
+              class="px-4 h-7 inline-flex items-center rounded-md text-xs font-medium text-neutral-700 bg-white border border-neutral-300 shadow-sm hover:bg-neutral-50 active:bg-neutral-100 transition-all cursor-pointer"
+            >
+              Billing
+            </a>
+            <button
+              type="button"
+              id="logout-btn"
+              class="px-4 h-7 inline-flex items-center rounded-md text-xs font-medium text-red-600 bg-white border border-neutral-300 shadow-sm hover:bg-neutral-50 active:bg-neutral-100 transition-all cursor-pointer"
+            >
+              Log out
+            </button>
+          </div>
+        </div>
+
+        <!-- Email Metadata Fields -->
+        <div class="flex flex-col bg-white">
+          <div class="flex items-center px-4 py-2 border-b border-[#e5e5e5]">
+            <span class="text-neutral-400 w-16 text-left mr-3 text-sm font-medium">To:</span>
+            <span id="user-name" class="text-neutral-900 text-sm bg-blue-100/50 px-2 py-0.5 rounded text-blue-800">Loading...</span>
+          </div>
+          <div class="flex items-center px-4 py-2 border-b border-[#e5e5e5]">
+            <span class="text-neutral-400 w-16 text-left mr-3 text-sm font-medium">Subject:</span>
+            <span class="text-neutral-900 text-sm font-medium">Your weekly account snapshot</span>
+          </div>
+          <div class="flex items-center px-4 py-2 border-b border-[#e5e5e5]">
+             <span class="text-neutral-400 w-16 text-left mr-3 text-sm font-medium">From:</span>
+             <span class="text-neutral-500 text-sm">Alpha &lt;alpha@alphamail.ai&gt;</span>
+          </div>
+        </div>
+
+        <!-- Email Body -->
+        <div class="p-6 sm:p-8 bg-white min-h-[300px] text-neutral-800 font-[Helvetica] text-base leading-relaxed space-y-6">
+            <p>Hi <span id="first-name">there</span>,</p>
+            <p>Here's your latest progress at a glance:</p>
+            
+            <ul class="list-none pl-4 space-y-2 border-l-2 border-blue-100 ml-2">
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span class="text-neutral-500">Weeks active:</span> 
+                <span id="weeks-active" class="font-semibold text-neutral-900">–</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span class="text-neutral-500">Goals completed:</span> 
+                <span id="goals-completed" class="font-semibold text-neutral-900">–</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span class="text-neutral-500">Current goal:</span> 
+                <span id="current-goal" class="font-semibold text-neutral-900">–</span>
+              </li>
+            </ul>
+
+            <p class="text-neutral-600">
+              Reply to Alpha's emails to keep your streak going.
+            </p>
+            
+            <div class="pt-4 text-neutral-400 text-sm">
+                <p>Best,</p>
+                <p>Alpha</p>
+            </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import { supabase } from "../lib/supabase";
+
+  // Check auth and load data
+  async function init() {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      window.location.href = "/signin";
+      return;
+    }
+
+    // Fetch profile
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", user.id)
+      .single();
+
+    if (profile) {
+      const nameEl = document.getElementById("user-name");
+      const firstNameEl = document.getElementById("first-name");
+      if (nameEl) nameEl.textContent = profile.first_name || profile.email;
+      if (firstNameEl) firstNameEl.textContent = profile.first_name || "there";
+
+      // Calculate weeks active
+      const createdAt = new Date(profile.created_at);
+      const now = new Date();
+      const weeksActive = Math.max(1, Math.ceil((now.getTime() - createdAt.getTime()) / (7 * 24 * 60 * 60 * 1000)));
+      const weeksEl = document.getElementById("weeks-active");
+      if (weeksEl) weeksEl.textContent = weeksActive.toString();
+    }
+
+    // Fetch goals
+    const { data: goals } = await supabase
+      .from("goals")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (goals) {
+      const completedGoals = goals.filter(g => g.completed).length;
+      const completedEl = document.getElementById("goals-completed");
+      if (completedEl) completedEl.textContent = completedGoals.toString();
+
+      const currentGoal = goals.find(g => !g.completed);
+      const goalEl = document.getElementById("current-goal");
+      if (goalEl) {
+        goalEl.textContent = currentGoal?.description || "No active goal";
+      }
+    }
+  }
+
+  init();
+
+  // Logout handler
+  const logoutBtn = document.getElementById("logout-btn");
+  logoutBtn?.addEventListener("click", async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  });
+</script>

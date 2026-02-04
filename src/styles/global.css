@@ -1,0 +1,8 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Song+Myung&display=swap");
+@import "tailwindcss";
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background-image: url("/patterns/dots.svg");
+  background-repeat: repeat;
+}
