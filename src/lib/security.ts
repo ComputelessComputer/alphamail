@@ -7,7 +7,13 @@ import crypto from "crypto";
 // Webhook Signature Verification (Resend/Svix)
 // ============================================
 
+// Support separate secrets for different webhook endpoints
+const RESEND_WEBHOOK_SECRET_INBOUND = import.meta.env.RESEND_WEBHOOK_SECRET_INBOUND;
+const RESEND_WEBHOOK_SECRET_EVENTS = import.meta.env.RESEND_WEBHOOK_SECRET_EVENTS;
+// Fallback to single secret for backwards compatibility
 const RESEND_WEBHOOK_SECRET = import.meta.env.RESEND_WEBHOOK_SECRET;
+
+export type WebhookEndpoint = "inbound" | "events";
 
 export interface WebhookVerificationResult {
   verified: boolean;
@@ -16,15 +22,29 @@ export interface WebhookVerificationResult {
 }
 
 /**
+ * Get the appropriate webhook secret for an endpoint
+ */
+function getWebhookSecret(endpoint: WebhookEndpoint): string | undefined {
+  if (endpoint === "inbound") {
+    return RESEND_WEBHOOK_SECRET_INBOUND || RESEND_WEBHOOK_SECRET;
+  }
+  return RESEND_WEBHOOK_SECRET_EVENTS || RESEND_WEBHOOK_SECRET;
+}
+
+/**
  * Verify Resend webhook signature using Svix
  * IMPORTANT: Must use raw request body (string), not parsed JSON
+ * @param endpoint Which webhook endpoint is being verified ("inbound" or "events")
  */
 export async function verifyResendWebhook(
   rawBody: string,
-  headers: Headers
+  headers: Headers,
+  endpoint: WebhookEndpoint = "inbound"
 ): Promise<WebhookVerificationResult> {
-  if (!RESEND_WEBHOOK_SECRET) {
-    console.warn("RESEND_WEBHOOK_SECRET not configured - skipping verification");
+  const secret = getWebhookSecret(endpoint);
+  
+  if (!secret) {
+    console.warn(`Webhook secret not configured for ${endpoint} - skipping verification`);
     // In development, allow unverified webhooks with a warning
     try {
       return { verified: true, payload: JSON.parse(rawBody) };
@@ -34,7 +54,7 @@ export async function verifyResendWebhook(
   }
 
   try {
-    const wh = new Webhook(RESEND_WEBHOOK_SECRET);
+    const wh = new Webhook(secret);
     
     const svixHeaders = {
       "svix-id": headers.get("svix-id") || "",
@@ -46,7 +66,7 @@ export async function verifyResendWebhook(
     const payload = wh.verify(rawBody, svixHeaders);
     return { verified: true, payload };
   } catch (error: any) {
-    console.error("Webhook verification failed:", error.message);
+    console.error(`Webhook verification failed for ${endpoint}:`, error.message);
     return { verified: false, error: "Invalid webhook signature" };
   }
 }

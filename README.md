@@ -73,7 +73,8 @@ PUBLIC_APP_URL=http://localhost:4321
 CRON_SECRET=any-random-string
 
 # Security (optional but recommended for production)
-RESEND_WEBHOOK_SECRET=whsec_xxxxx  # From Resend webhook settings
+RESEND_WEBHOOK_SECRET_INBOUND=whsec_xxxxx   # From inbound webhook settings
+RESEND_WEBHOOK_SECRET_EVENTS=whsec_xxxxx    # From events webhook settings
 UPSTASH_REDIS_REST_URL=https://xxxxx.upstash.io  # For rate limiting
 UPSTASH_REDIS_REST_TOKEN=xxxxx
 CSRF_SECRET=any-random-string  # Auto-generated if not set
@@ -102,7 +103,9 @@ Configure Supabase Auth:
 2. Create two webhooks:
    - `https://yourdomain.com/api/email/inbound` → Event: `email.received`
    - `https://yourdomain.com/api/webhook/resend-events` → Events: `email.bounced`, `email.complained`
-3. Copy the webhook signing secret and add it as `RESEND_WEBHOOK_SECRET`
+3. Copy each webhook's signing secret:
+   - Inbound webhook secret → `RESEND_WEBHOOK_SECRET_INBOUND`
+   - Events webhook secret → `RESEND_WEBHOOK_SECRET_EVENTS`
 4. Set up inbound email address (e.g., `alpha@yourdomain.com`)
 
 ### 5. Set up Upstash (optional, for rate limiting)

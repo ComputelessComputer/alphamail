@@ -11,7 +11,7 @@ export const POST: APIRoute = async ({ request }) => {
     const rawBody = await request.text();
     
     // Verify webhook signature
-    const verification = await verifyResendWebhook(rawBody, request.headers);
+    const verification = await verifyResendWebhook(rawBody, request.headers, "events");
     if (!verification.verified) {
       auditLog("webhook.invalid_signature", request, {
         details: { error: verification.error, endpoint: "resend-events" },
