@@ -84,6 +84,18 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   
   if (!user) {
     window.location.href = "/signin";
+  } else {
+    // Check if user is already onboarded
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarded")
+      .eq("user_id", user.id)
+      .single();
+
+    if (profile?.onboarded) {
+      // Already onboarded, redirect to account
+      window.location.href = "/account";
+    }
   }
 
   const form = document.getElementById("onboarding-form") as HTMLFormElement;
@@ -127,6 +139,13 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         });
 
       if (goalError) throw goalError;
+
+      // Link any pending emails from before signup
+      await fetch("/api/user/link-pending-emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user!.id, email: user!.email }),
+      });
 
       // Trigger welcome email (via API)
       await fetch("/api/email/welcome", {

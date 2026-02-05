@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
-import { sendEmail } from "../../../lib/resend";
+import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -38,41 +38,39 @@ export const POST: APIRoute = async ({ request }) => {
       .single();
 
     // Send welcome email
-    const html = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a;">
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          yo ${profile.first_name}
-        </p>
-        
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          welcome to alphamail. i'm alpha, your weekly accountability partner.
-        </p>
+    const html = wrapEmailHtml(`
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+        yo ${profile.first_name}
+      </p>
+      
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+        welcome to alphamail. i'm alpha, your weekly accountability partner.
+      </p>
 
-        ${goal ? `
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          your first goal: <strong>${goal.description}</strong>
-        </p>
-        ` : ''}
+      ${goal ? `
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+        your first goal: <strong>${goal.description}</strong>
+      </p>
+      ` : ''}
 
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          here's how this works:
-        </p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+        here's how this works:
+      </p>
 
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          every sunday i'll email you asking how your goal went. you reply with what happened — the good, the bad, whatever. then tell me your next goal. that's it.
-        </p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+        every sunday i'll email you asking how your goal went. you reply with what happened — the good, the bad, whatever. then tell me your next goal. that's it.
+      </p>
 
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          see you sunday.
-        </p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+        see you sunday.
+      </p>
 
-        <p style="font-size: 16px; color: #6b7280;">
-          - alpha
-        </p>
-      </div>
-    `;
+      <p style="font-size: 16px; color: #6b7280;">
+        - alpha
+      </p>
+    `);
 
-    const text = `yo ${profile.first_name}
+    const text = wrapEmailText(`yo ${profile.first_name}
 
 welcome to alphamail. i'm alpha, your weekly accountability partner.
 
@@ -82,8 +80,7 @@ every sunday i'll email you asking how your goal went. you reply with what happe
 
 see you sunday.
 
-- alpha
-    `;
+- alpha`);
 
     await sendEmail({
       to: profile.email,

@@ -1,5 +1,9 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+
+// Get email from URL param (for users coming from Alpha's intro email)
+const url = new URL(Astro.request.url);
+const prefillEmail = url.searchParams.get("email") || "";
 ---
 
 <BaseLayout title="AlphaMail — Get Started">
@@ -21,6 +25,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
             name="email"
             required
             placeholder="you@example.com"
+            value={prefillEmail}
             class="w-full h-11 px-4 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
           />
         </div>
