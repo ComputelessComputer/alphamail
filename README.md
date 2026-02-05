@@ -20,6 +20,7 @@ An AI-powered weekly accountability partner that lives in your inbox. No app, no
 - 🔄 **Conversation threading** — Replies stay in the same email thread
 - 📊 **Journey summary** — AI-generated summary of your progress on your account page
 - 🔒 **Magic link auth** — No passwords, just click a link
+- 🛡️ **Security hardened** — Webhook verification, rate limiting, CSRF protection, CSP headers
 
 ## Tech Stack
 
@@ -28,6 +29,7 @@ An AI-powered weekly accountability partner that lives in your inbox. No app, no
 - **Auth & Database**: [Supabase](https://supabase.com)
 - **Email**: [Resend](https://resend.com)
 - **AI**: [Anthropic Claude](https://anthropic.com)
+- **Rate Limiting**: [Upstash Redis](https://upstash.com) (optional)
 - **Deployment**: [Vercel](https://vercel.com)
 
 ## Getting Started
@@ -57,13 +59,24 @@ cp .env.example .env
 Fill in your `.env`:
 
 ```
+# Supabase
 PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# API Keys
 RESEND_API_KEY=re_xxxxx
 ANTHROPIC_API_KEY=sk-ant-xxxxx
+
+# App
 PUBLIC_APP_URL=http://localhost:4321
 CRON_SECRET=any-random-string
+
+# Security (optional but recommended for production)
+RESEND_WEBHOOK_SECRET=whsec_xxxxx  # From Resend webhook settings
+UPSTASH_REDIS_REST_URL=https://xxxxx.upstash.io  # For rate limiting
+UPSTASH_REDIS_REST_TOKEN=xxxxx
+CSRF_SECRET=any-random-string  # Auto-generated if not set
 ```
 
 ### 3. Set up Supabase
@@ -89,9 +102,15 @@ Configure Supabase Auth:
 2. Create two webhooks:
    - `https://yourdomain.com/api/email/inbound` → Event: `email.received`
    - `https://yourdomain.com/api/webhook/resend-events` → Events: `email.bounced`, `email.complained`
-3. Set up inbound email address (e.g., `alpha@yourdomain.com`)
+3. Copy the webhook signing secret and add it as `RESEND_WEBHOOK_SECRET`
+4. Set up inbound email address (e.g., `alpha@yourdomain.com`)
 
-### 5. Run locally
+### 5. Set up Upstash (optional, for rate limiting)
+
+1. Create a Redis database at [upstash.com](https://upstash.com)
+2. Copy the REST URL and token to your `.env`
+
+### 6. Run locally
 
 ```bash
 pnpm dev
@@ -131,7 +150,9 @@ src/
 ├── lib/
 │   ├── ai.ts           # Anthropic Claude integration
 │   ├── resend.ts       # Email sending utilities
+│   ├── security.ts     # Security utilities (rate limit, CSRF, etc.)
 │   └── supabase.ts     # Supabase client
+├── middleware.ts       # Security headers (CSP)
 ├── pages/
 │   ├── api/
 │   │   ├── email/

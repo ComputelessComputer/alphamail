@@ -5,7 +5,7 @@ export const POST: APIRoute = async () => {
   const { error } = await supabase.auth.signOut();
 
   if (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });

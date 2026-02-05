@@ -1,7 +1,15 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
-import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
+import { sendEmail, wrapEmailHtml, wrapEmailText, escapeHtml, escapeLikePattern } from "../../../lib/resend";
 import { parseUserReply, generateAlphaResponse, generateConversation, generateUserSummary, AIFailureError, type EmailMessage } from "../../../lib/ai";
+import { 
+  verifyResendWebhook, 
+  checkRateLimit, 
+  getClientIP, 
+  validateEmailContent, 
+  validateSubject, 
+  auditLog 
+} from "../../../lib/security";
 
 const APP_URL = import.meta.env.PUBLIC_APP_URL || "https://bealphamail.com";
 
@@ -19,9 +27,10 @@ async function sendFallbackEmail(
 
 sorry about that - sometimes my brain needs a quick reboot.`;
 
+  const safeFirstName = escapeHtml(firstName);
   const responseHtml = wrapEmailHtml(`
-    <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${firstName}</p>
-    <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${responseText}</p>
+    <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${safeFirstName}</p>
+    <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${escapeHtml(responseText)}</p>
     <p style="font-size: 16px; color: #6b7280;">- alpha</p>
   `);
 
@@ -45,7 +54,22 @@ function parseCCEmails(ccHeader: string | undefined): string[] {
 // Configure this URL in Resend dashboard: https://resend.com/webhooks
 export const POST: APIRoute = async ({ request }) => {
   try {
-    const payload = await request.json();
+    // Get raw body for signature verification
+    const rawBody = await request.text();
+    
+    // Verify webhook signature
+    const verification = await verifyResendWebhook(rawBody, request.headers);
+    if (!verification.verified) {
+      auditLog("webhook.invalid_signature", request, {
+        details: { error: verification.error, endpoint: "inbound" },
+      });
+      return new Response(JSON.stringify({ error: "Invalid webhook signature" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const payload = verification.payload;
 
     // Resend webhook payload structure
     const { type, data } = payload;
@@ -104,11 +128,13 @@ export const POST: APIRoute = async ({ request }) => {
     // First, try to find thread by subject (remove re: prefix and match)
     const cleanSubject = (subject || "").replace(/^re:\s*/i, "").trim();
     if (cleanSubject) {
+      // Escape special LIKE characters to prevent injection
+      const safeSubject = escapeLikePattern(cleanSubject);
       const { data: existingThread } = await supabase
         .from("emails")
         .select("thread_id")
         .eq("user_id", profile.user_id)
-        .ilike("subject", `%${cleanSubject}%`)
+        .ilike("subject", `%${safeSubject}%`)
         .not("thread_id", "is", null)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -181,11 +207,12 @@ export const POST: APIRoute = async ({ request }) => {
 
     // Check if user is confirming group creation
     const groupResult = await checkAndCreateGroup(supabase, profile.user_id, userMessage, firstName);
+    const safeFirstName = escapeHtml(firstName);
     if (groupResult.created) {
       // User confirmed group creation - send confirmation and return
       const responseHtml = wrapEmailHtml(`
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${firstName}</p>
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${groupResult.groupNote}</p>
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${safeFirstName}</p>
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${escapeHtml(groupResult.groupNote || "")}</p>
         <p style="font-size: 16px; color: #6b7280;">- alpha</p>
       `);
 
@@ -253,8 +280,8 @@ export const POST: APIRoute = async ({ request }) => {
       }
 
       const responseHtml = wrapEmailHtml(`
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${firstName}</p>
-        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${responseText}</p>
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${safeFirstName}</p>
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${escapeHtml(responseText)}</p>
         <p style="font-size: 16px; color: #6b7280;">- alpha</p>
       `);
 
@@ -356,8 +383,8 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const responseHtml = wrapEmailHtml(`
-      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${firstName}</p>
-      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${responseText}</p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${safeFirstName}</p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${escapeHtml(responseText)}</p>
       <p style="font-size: 16px; color: #6b7280;">- alpha</p>
     `);
 
@@ -388,7 +415,8 @@ export const POST: APIRoute = async ({ request }) => {
     });
   } catch (error: any) {
     console.error("Inbound email error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    // Don't leak internal error details to external callers
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });

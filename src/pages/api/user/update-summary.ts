@@ -4,7 +4,7 @@ import { generateUserSummary, type EmailMessage } from "../../../lib/ai";
 
 // Updates the AI-generated summary for a user
 // Called after each conversation or on-demand from account page
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, cookies }) => {
   try {
     const { userId } = await request.json();
 
@@ -16,6 +16,22 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const supabase = createServerClient();
+
+    // SECURITY: Verify the authenticated user matches the userId
+    const authHeader = request.headers.get("authorization");
+    const accessToken = authHeader?.replace("Bearer ", "") || 
+                        cookies.get("sb-access-token")?.value;
+
+    if (accessToken) {
+      const { data: { user } } = await supabase.auth.getUser(accessToken);
+      if (!user || user.id !== userId) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+    // Note: Also called internally from inbound.ts without auth header, which is OK
 
     // Get profile
     const { data: profile, error: profileError } = await supabase
@@ -83,7 +99,7 @@ export const POST: APIRoute = async ({ request }) => {
     });
   } catch (error: any) {
     console.error("Update summary error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });

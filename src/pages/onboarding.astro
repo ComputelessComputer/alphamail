@@ -23,6 +23,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
               id="first_name"
               name="first_name"
               required
+              maxlength="50"
               placeholder="Jamie"
               class="w-full h-11 px-4 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
             />
@@ -37,6 +38,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
               id="last_name"
               name="last_name"
               required
+              maxlength="50"
               placeholder="Lee"
               class="w-full h-11 px-4 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
             />
@@ -55,10 +57,12 @@ import BaseLayout from "../layouts/BaseLayout.astro";
               id="goal"
               name="goal"
               required
+              maxlength="500"
               rows="3"
               placeholder="Example: Finish the landing page design and get feedback from 3 people"
               class="w-full px-4 py-3 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 resize-none"
             ></textarea>
+            <p class="text-xs text-neutral-400 mt-1" id="goal-counter">0/500 characters</p>
           </div>
         </div>
 
@@ -109,9 +113,20 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     submitBtn.textContent = "Setting up...";
 
     const formData = new FormData(form);
-    const firstName = formData.get("first_name") as string;
-    const lastName = formData.get("last_name") as string;
-    const goal = formData.get("goal") as string;
+    const firstName = (formData.get("first_name") as string).trim();
+    const lastName = (formData.get("last_name") as string).trim();
+    const goal = (formData.get("goal") as string).trim();
+
+    // Client-side validation
+    if (firstName.length === 0 || firstName.length > 50) {
+      throw new Error("First name must be between 1 and 50 characters");
+    }
+    if (lastName.length === 0 || lastName.length > 50) {
+      throw new Error("Last name must be between 1 and 50 characters");
+    }
+    if (goal.length === 0 || goal.length > 500) {
+      throw new Error("Goal must be between 1 and 500 characters");
+    }
 
     try {
       // Update profile
@@ -161,6 +176,25 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       errorDiv.classList.remove("hidden");
       submitBtn.disabled = false;
       submitBtn.textContent = "Start my journey";
+    }
+  });
+
+  // Character counter for goal
+  const goalTextarea = document.getElementById("goal") as HTMLTextAreaElement;
+  const goalCounter = document.getElementById("goal-counter") as HTMLParagraphElement;
+  
+  goalTextarea.addEventListener("input", () => {
+    const length = goalTextarea.value.length;
+    goalCounter.textContent = `${length}/500 characters`;
+    if (length > 450) {
+      goalCounter.classList.add("text-amber-500");
+      goalCounter.classList.remove("text-neutral-400", "text-red-500");
+    } else if (length >= 500) {
+      goalCounter.classList.add("text-red-500");
+      goalCounter.classList.remove("text-neutral-400", "text-amber-500");
+    } else {
+      goalCounter.classList.add("text-neutral-400");
+      goalCounter.classList.remove("text-amber-500", "text-red-500");
     }
   });
 </script>

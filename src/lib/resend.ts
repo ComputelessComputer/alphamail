@@ -1,5 +1,20 @@
 import { Resend } from "resend";
 
+// HTML escape utility for XSS prevention
+export function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Escape special characters for SQL LIKE patterns
+export function escapeLikePattern(pattern: string): string {
+  return pattern.replace(/[%_\\]/g, "\\$&");
+}
+
 const apiKey = import.meta.env.RESEND_API_KEY;
 
 if (!apiKey) {

@@ -1,12 +1,28 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
+import { verifyResendWebhook, auditLog } from "../../../lib/security";
 
 // Resend webhook for email events (bounces, complaints, etc.)
 // Configure this URL in Resend dashboard: https://resend.com/webhooks
 // Events: email.bounced, email.complained
 export const POST: APIRoute = async ({ request }) => {
   try {
-    const payload = await request.json();
+    // Get raw body for signature verification
+    const rawBody = await request.text();
+    
+    // Verify webhook signature
+    const verification = await verifyResendWebhook(rawBody, request.headers);
+    if (!verification.verified) {
+      auditLog("webhook.invalid_signature", request, {
+        details: { error: verification.error, endpoint: "resend-events" },
+      });
+      return new Response(JSON.stringify({ error: "Invalid webhook signature" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const payload = verification.payload;
     const { type, data } = payload;
 
     const supabase = createServerClient();
@@ -66,7 +82,7 @@ export const POST: APIRoute = async ({ request }) => {
     });
   } catch (error: any) {
     console.error("Resend webhook error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });

@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
-import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
+import { sendEmail, wrapEmailHtml, wrapEmailText, escapeHtml } from "../../../lib/resend";
 
 // Sunday check-in email endpoint
 // Call this via cron job every Sunday (e.g., Vercel Cron, GitHub Actions)
@@ -41,7 +41,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     if (goalsError) {
       console.error("Failed to fetch goals:", goalsError);
-      return new Response(JSON.stringify({ error: goalsError.message }), {
+      return new Response(JSON.stringify({ error: "Failed to fetch goals" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -70,10 +70,12 @@ export const POST: APIRoute = async ({ request }) => {
       
       const firstName = profile.first_name || "there";
       const email = profile.email;
+      const safeFirstName = escapeHtml(firstName);
+      const safeGoalDesc = escapeHtml(goal.description);
 
       const html = wrapEmailHtml(`
         <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          yo ${firstName}
+          yo ${safeFirstName}
         </p>
         
         <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
@@ -81,7 +83,7 @@ export const POST: APIRoute = async ({ request }) => {
         </p>
 
         <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          your goal was: <strong>${goal.description}</strong>
+          your goal was: <strong>${safeGoalDesc}</strong>
         </p>
 
         <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
@@ -177,10 +179,12 @@ hit reply and tell me what happened. the good, the bad, whatever. then give me y
 
         const memberNames = activeMembers.map(m => m.profiles?.first_name || "someone").join(" and ");
         const memberEmails = activeMembers.map(m => m.profiles?.email).filter(Boolean);
+        const safeMemberNames = escapeHtml(memberNames);
+        const safeGroupGoal = escapeHtml(activeGoal.description);
 
         const html = wrapEmailHtml(`
           <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            yo ${memberNames}
+            yo ${safeMemberNames}
           </p>
           
           <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
@@ -188,7 +192,7 @@ hit reply and tell me what happened. the good, the bad, whatever. then give me y
           </p>
 
           <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            your group goal was: <strong>${activeGoal.description}</strong>
+            your group goal was: <strong>${safeGroupGoal}</strong>
           </p>
 
           <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
@@ -239,7 +243,7 @@ so... how'd you both do? reply-all so your partner can see, or reply just to me 
     });
   } catch (error: any) {
     console.error("Check-in email error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });

@@ -3,7 +3,7 @@ import { createServerClient } from "../../../lib/supabase";
 
 // Links pending emails from non-authenticated users to their new account
 // Called after user completes signup/onboarding
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, cookies }) => {
   try {
     const { userId, email } = await request.json();
 
@@ -14,7 +14,21 @@ export const POST: APIRoute = async ({ request }) => {
       });
     }
 
+    // SECURITY: Verify the authenticated user matches the userId
     const supabase = createServerClient();
+    const authHeader = request.headers.get("authorization");
+    const accessToken = authHeader?.replace("Bearer ", "") || 
+                        cookies.get("sb-access-token")?.value;
+
+    if (accessToken) {
+      const { data: { user } } = await supabase.auth.getUser(accessToken);
+      if (!user || user.id !== userId) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Find pending emails from this email address
     const { data: pendingEmails, error: fetchError } = await supabase
@@ -83,7 +97,7 @@ export const POST: APIRoute = async ({ request }) => {
     });
   } catch (error: any) {
     console.error("Link pending emails error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });

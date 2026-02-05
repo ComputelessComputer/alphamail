@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
-import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
+import { sendEmail, wrapEmailHtml, wrapEmailText, escapeHtml } from "../../../lib/resend";
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -38,9 +38,11 @@ export const POST: APIRoute = async ({ request }) => {
       .single();
 
     // Send welcome email
+    const safeFirstName = escapeHtml(profile.first_name || "there");
+    const safeGoalDesc = goal ? escapeHtml(goal.description) : "";
     const html = wrapEmailHtml(`
       <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-        yo ${profile.first_name}
+        yo ${safeFirstName}
       </p>
       
       <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
@@ -49,7 +51,7 @@ export const POST: APIRoute = async ({ request }) => {
 
       ${goal ? `
       <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-        your first goal: <strong>${goal.description}</strong>
+        your first goal: <strong>${safeGoalDesc}</strong>
       </p>
       ` : ''}
 
@@ -103,7 +105,7 @@ see you sunday.
     });
   } catch (error: any) {
     console.error("Welcome email error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
