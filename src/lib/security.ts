@@ -75,8 +75,9 @@ export async function verifyResendWebhook(
 // Rate Limiting (Upstash Redis)
 // ============================================
 
-const UPSTASH_REDIS_URL = import.meta.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_REDIS_TOKEN = import.meta.env.UPSTASH_REDIS_REST_TOKEN;
+// Support both Vercel KV naming and direct Upstash naming
+const UPSTASH_REDIS_URL = import.meta.env.KV_REST_API_URL || import.meta.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_REDIS_TOKEN = import.meta.env.KV_REST_API_TOKEN || import.meta.env.UPSTASH_REDIS_REST_TOKEN;
 
 let ratelimitInstance: Ratelimit | null = null;
 let strictRatelimitInstance: Ratelimit | null = null;
