@@ -128,6 +128,13 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       if (goalError) throw goalError;
 
+      // Link any pending emails from before signup
+      await fetch("/api/user/link-pending-emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user!.id, email: user!.email }),
+      });
+
       // Trigger welcome email (via API)
       await fetch("/api/email/welcome", {
         method: "POST",

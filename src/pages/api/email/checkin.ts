@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
-import { sendEmail } from "../../../lib/resend";
+import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
 
 // Sunday check-in email endpoint
 // Call this via cron job every Sunday (e.g., Vercel Cron, GitHub Actions)
@@ -60,35 +60,33 @@ export const POST: APIRoute = async ({ request }) => {
       const firstName = profile.first_name || "there";
       const email = profile.email;
 
-      const html = `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a;">
-          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            yo ${firstName}
-          </p>
-          
-          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            sunday check-in time. 👀
-          </p>
+      const html = wrapEmailHtml(`
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          yo ${firstName}
+        </p>
+        
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          sunday check-in time. 👀
+        </p>
 
-          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            your goal was: <strong>${goal.description}</strong>
-          </p>
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          your goal was: <strong>${goal.description}</strong>
+        </p>
 
-          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            so... did you? be honest. i won't judge (much).
-          </p>
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          so... did you? be honest. i won't judge (much).
+        </p>
 
-          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            hit reply and tell me what happened. the good, the bad, whatever. then give me your next goal.
-          </p>
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          hit reply and tell me what happened. the good, the bad, whatever. then give me your next goal.
+        </p>
 
-          <p style="font-size: 16px; color: #6b7280;">
-            - alpha
-          </p>
-        </div>
-      `;
+        <p style="font-size: 16px; color: #6b7280;">
+          - alpha
+        </p>
+      `);
 
-      const text = `yo ${firstName}
+      const text = wrapEmailText(`yo ${firstName}
 
 sunday check-in time. 👀
 
@@ -98,7 +96,7 @@ so... did you? be honest. i won't judge (much).
 
 hit reply and tell me what happened. the good, the bad, whatever. then give me your next goal.
 
-- alpha`;
+- alpha`);
 
       try {
         await sendEmail({
