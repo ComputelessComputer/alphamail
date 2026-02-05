@@ -9,7 +9,7 @@ if (!apiKey) {
 export const resend = new Resend(apiKey);
 
 // Default sender address
-export const FROM_EMAIL = "Alpha <alpha@alphamail.ai>";
+export const FROM_EMAIL = "Alpha <alpha@bealphamail.com>";
 
 // Helper to send emails
 export async function sendEmail({
