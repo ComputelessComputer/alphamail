@@ -26,7 +26,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
             <button
               type="button"
               id="logout-btn"
-              class="px-4 h-7 inline-flex items-center rounded-md text-xs font-medium text-red-600 bg-white border border-neutral-300 shadow-sm hover:bg-neutral-50 active:bg-neutral-100 transition-all cursor-pointer"
+              class="px-4 h-7 inline-flex items-center rounded-md text-xs font-medium text-neutral-600 bg-white border border-neutral-300 shadow-sm hover:bg-neutral-50 active:bg-neutral-100 transition-all cursor-pointer"
             >
               Log out
             </button>
@@ -51,35 +51,49 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
         <!-- Email Body -->
         <div class="p-6 sm:p-8 bg-white min-h-[300px] text-neutral-800 font-[Helvetica] text-base leading-relaxed space-y-6">
-            <p>Hi <span id="first-name">there</span>,</p>
-            <p>Here's your latest progress at a glance:</p>
+            <p>yo <span id="first-name">there</span>,</p>
+            
+            <!-- AI-generated summary -->
+            <p id="user-summary" class="text-neutral-700 leading-relaxed">
+              loading your journey...
+            </p>
             
             <ul class="list-none pl-4 space-y-2 border-l-2 border-blue-100 ml-2">
               <li class="flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-                <span class="text-neutral-500">Weeks active:</span> 
+                <span class="text-neutral-500">weeks active:</span> 
                 <span id="weeks-active" class="font-semibold text-neutral-900">–</span>
               </li>
               <li class="flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-                <span class="text-neutral-500">Goals completed:</span> 
+                <span class="text-neutral-500">goals completed:</span> 
                 <span id="goals-completed" class="font-semibold text-neutral-900">–</span>
               </li>
               <li class="flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-                <span class="text-neutral-500">Current goal:</span> 
+                <span class="text-neutral-500">current goal:</span> 
                 <span id="current-goal" class="font-semibold text-neutral-900">–</span>
               </li>
             </ul>
 
-            <p class="text-neutral-600">
-              Reply to Alpha's emails to keep your streak going.
+            <p class="text-neutral-500 text-sm">
+              just reply to my emails to keep the conversation going.
             </p>
             
             <div class="pt-4 text-neutral-400 text-sm">
-                <p>Best,</p>
-                <p>Alpha</p>
+                <p>- alpha</p>
             </div>
+        </div>
+        
+        <!-- Delete Account Section -->
+        <div class="px-6 sm:px-8 py-4 bg-neutral-50 border-t border-neutral-200">
+          <button
+            type="button"
+            id="delete-account-btn"
+            class="text-xs text-neutral-400 hover:text-red-500 transition-colors cursor-pointer"
+          >
+            delete my account
+          </button>
         </div>
       </div>
     </div>
@@ -108,6 +122,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     if (profile) {
       const nameEl = document.getElementById("user-name");
       const firstNameEl = document.getElementById("first-name");
+      const summaryEl = document.getElementById("user-summary");
+      
       if (nameEl) nameEl.textContent = profile.first_name || profile.email;
       if (firstNameEl) firstNameEl.textContent = profile.first_name || "there";
 
@@ -117,6 +133,29 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       const weeksActive = Math.max(1, Math.ceil((now.getTime() - createdAt.getTime()) / (7 * 24 * 60 * 60 * 1000)));
       const weeksEl = document.getElementById("weeks-active");
       if (weeksEl) weeksEl.textContent = weeksActive.toString();
+
+      // Display summary or generate one
+      if (profile.summary) {
+        if (summaryEl) summaryEl.textContent = profile.summary;
+      } else {
+        // No summary yet - generate one
+        if (summaryEl) summaryEl.textContent = "generating your journey summary...";
+        try {
+          const res = await fetch("/api/user/update-summary", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: user.id }),
+          });
+          const data = await res.json();
+          if (data.summary && summaryEl) {
+            summaryEl.textContent = data.summary;
+          } else if (summaryEl) {
+            summaryEl.textContent = "you're just getting started. keep chatting with me and i'll have more to say about your journey soon.";
+          }
+        } catch (err) {
+          if (summaryEl) summaryEl.textContent = "you're just getting started. keep chatting with me and i'll have more to say about your journey soon.";
+        }
+      }
     }
 
     // Fetch goals
@@ -146,5 +185,49 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   logoutBtn?.addEventListener("click", async () => {
     await supabase.auth.signOut();
     window.location.href = "/";
+  });
+
+  // Delete account handler
+  const deleteBtn = document.getElementById("delete-account-btn");
+  deleteBtn?.addEventListener("click", async () => {
+    const confirmed = confirm(
+      "are you sure you want to delete your account? this will permanently delete all your data, goals, and conversation history. this cannot be undone."
+    );
+    
+    if (!confirmed) return;
+    
+    const doubleConfirmed = confirm(
+      "just to be 100% sure - you really want to delete everything?"
+    );
+    
+    if (!doubleConfirmed) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    deleteBtn.textContent = "deleting...";
+    (deleteBtn as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await fetch("/api/user/delete-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+
+      if (res.ok) {
+        await supabase.auth.signOut();
+        window.location.href = "/?deleted=true";
+      } else {
+        const data = await res.json();
+        alert("failed to delete account: " + (data.error || "unknown error"));
+        deleteBtn.textContent = "delete my account";
+        (deleteBtn as HTMLButtonElement).disabled = false;
+      }
+    } catch (err) {
+      alert("failed to delete account. please try again.");
+      deleteBtn.textContent = "delete my account";
+      (deleteBtn as HTMLButtonElement).disabled = false;
+    }
   });
 </script>

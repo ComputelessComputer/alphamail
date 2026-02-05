@@ -189,3 +189,60 @@ Just respond with your message text, no JSON.`,
 
   return content.text.trim();
 }
+
+// Generate a summary of user's journey for their account page
+export async function generateUserSummary(
+  firstName: string,
+  conversationHistory: EmailMessage[],
+  goalsCompleted: number,
+  currentGoal: string | null,
+  weeksActive: number
+): Promise<string> {
+  if (!anthropic) {
+    throw new Error("AI not configured");
+  }
+
+  // Build conversation context (last 20 messages)
+  let conversationContext = "";
+  const recentMessages = conversationHistory.slice(-20);
+  if (recentMessages.length > 0) {
+    conversationContext = `Recent conversations:\n---\n`;
+    for (const msg of recentMessages) {
+      const speaker = msg.direction === "inbound" ? firstName : "Alpha";
+      conversationContext += `${speaker}: ${msg.content}\n---\n`;
+    }
+  }
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 300,
+    messages: [
+      {
+        role: "user",
+        content: `Write a brief, personal summary of this user's journey with Alpha (the AI accountability partner). This will be shown on their account page.
+
+User: ${firstName}
+Weeks active: ${weeksActive}
+Goals completed: ${goalsCompleted}
+Current goal: ${currentGoal || "None right now"}
+
+${conversationContext}
+
+Write 2-3 sentences that:
+1. Feel personal and specific to them (reference actual things they've shared)
+2. Are encouraging but honest
+3. Use casual lowercase style like Alpha's emails
+4. Focus on their progress and journey, not stats
+
+Just write the summary text, nothing else.`,
+      },
+    ],
+  });
+
+  const content = response.content[0];
+  if (content.type !== "text") {
+    throw new Error("Unexpected response type");
+  }
+
+  return content.text.trim();
+}

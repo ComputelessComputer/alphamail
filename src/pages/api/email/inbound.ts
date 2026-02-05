@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
 import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
-import { parseUserReply, generateAlphaResponse, generateConversation, type EmailMessage } from "../../../lib/ai";
+import { parseUserReply, generateAlphaResponse, generateConversation, generateUserSummary, type EmailMessage } from "../../../lib/ai";
 
 const APP_URL = import.meta.env.PUBLIC_APP_URL || "https://bealphamail.com";
 
@@ -205,6 +205,9 @@ export const POST: APIRoute = async ({ request }) => {
         thread_id: threadId,
       });
 
+      // Update user summary in background (don't await)
+      updateUserSummary(supabase, profile.user_id, firstName).catch(console.error);
+
       return new Response(JSON.stringify({ success: true, action: "conversation" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -285,6 +288,9 @@ export const POST: APIRoute = async ({ request }) => {
       thread_id: threadId,
     });
 
+    // Update user summary in background (don't await)
+    updateUserSummary(supabase, profile.user_id, firstName).catch(console.error);
+
     console.log(`Processed email from ${senderEmail}, completed: ${parsed.completed}`);
 
     return new Response(JSON.stringify({ success: true, parsed, threadId }), {
@@ -299,6 +305,61 @@ export const POST: APIRoute = async ({ request }) => {
     });
   }
 };
+
+// Update user summary after conversations
+async function updateUserSummary(
+  supabase: ReturnType<typeof createServerClient>,
+  userId: string,
+  firstName: string
+) {
+  try {
+    // Get conversation history
+    const { data: emails } = await supabase
+      .from("emails")
+      .select("direction, content, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(50);
+
+    // Get goals
+    const { data: goals } = await supabase
+      .from("goals")
+      .select("*")
+      .eq("user_id", userId);
+
+    // Get profile for created_at
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("created_at")
+      .eq("user_id", userId)
+      .single();
+
+    if (!profile) return;
+
+    const completedGoals = goals?.filter(g => g.completed).length || 0;
+    const currentGoal = goals?.find(g => !g.completed);
+    const createdAt = new Date(profile.created_at);
+    const now = new Date();
+    const weeksActive = Math.max(1, Math.ceil((now.getTime() - createdAt.getTime()) / (7 * 24 * 60 * 60 * 1000)));
+
+    const summary = await generateUserSummary(
+      firstName,
+      (emails || []) as EmailMessage[],
+      completedGoals,
+      currentGoal?.description || null,
+      weeksActive
+    );
+
+    await supabase
+      .from("profiles")
+      .update({ summary })
+      .eq("user_id", userId);
+
+    console.log(`Updated summary for user ${userId}`);
+  } catch (error) {
+    console.error("Failed to update user summary:", error);
+  }
+}
 
 // Handle emails from non-authenticated users
 async function handleNonAuthenticatedUser(
