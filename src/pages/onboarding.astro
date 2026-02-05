@@ -84,6 +84,18 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   
   if (!user) {
     window.location.href = "/signin";
+  } else {
+    // Check if user is already onboarded
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarded")
+      .eq("user_id", user.id)
+      .single();
+
+    if (profile?.onboarded) {
+      // Already onboarded, redirect to account
+      window.location.href = "/account";
+    }
   }
 
   const form = document.getElementById("onboarding-form") as HTMLFormElement;

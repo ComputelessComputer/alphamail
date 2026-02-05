@@ -8,13 +8,46 @@ if (!apiKey) {
 
 const anthropic = apiKey ? new Anthropic({ apiKey }) : null;
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const INITIAL_DELAY_MS = 1000;
+
+// Retry wrapper with exponential backoff
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = MAX_RETRIES
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      console.error(`AI call failed (attempt ${attempt + 1}/${retries}):`, error.message);
+      
+      // Don't retry on certain errors
+      if (error.status === 401 || error.status === 403) {
+        throw error; // Auth errors won't be fixed by retrying
+      }
+      
+      if (attempt < retries - 1) {
+        const delay = INITIAL_DELAY_MS * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
 export interface EmailMessage {
   direction: "inbound" | "outbound";
   content: string;
   created_at: string;
 }
 
-interface ParsedReply {
+export interface ParsedReply {
   progress: string;
   completed: boolean;
   nextGoal: string | null;
@@ -26,21 +59,30 @@ interface AlphaResponse {
   askForNextGoal: boolean;
 }
 
+// Flag to indicate AI failure (used by callers to send fallback email)
+export class AIFailureError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AIFailureError";
+  }
+}
+
 export async function parseUserReply(
   userMessage: string,
   currentGoal: string
 ): Promise<ParsedReply> {
   if (!anthropic) {
-    throw new Error("AI not configured");
+    throw new AIFailureError("AI not configured");
   }
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 500,
-    messages: [
-      {
-        role: "user",
-        content: `You are parsing a user's reply to a weekly goal check-in email.
+  return withRetry(async () => {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 500,
+      messages: [
+        {
+          role: "user",
+          content: `You are parsing a user's reply to a weekly goal check-in email.
 
 Their goal was: "${currentGoal}"
 
@@ -57,17 +99,24 @@ Extract the following as JSON:
   "mood": "positive" | "neutral" | "negative" (based on their tone)
 }
 
+IMPORTANT for nextGoal extraction:
+- Look for phrases like "next week", "my next goal", "this week I want to", "planning to", "going to", "I'll", "I will", "I'm gonna"
+- Also look for future tense statements about what they want to accomplish
+- If they mention something they want to do but aren't explicit about it being a goal, still extract it as nextGoal
+- Clean up the goal text to be concise and actionable
+
 Only respond with valid JSON, nothing else.`,
-      },
-    ],
+        },
+      ],
+    });
+
+    const content = response.content[0];
+    if (content.type !== "text") {
+      throw new Error("Unexpected response type");
+    }
+
+    return JSON.parse(content.text);
   });
-
-  const content = response.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
-
-  return JSON.parse(content.text);
 }
 
 export async function generateAlphaResponse(
@@ -77,7 +126,7 @@ export async function generateAlphaResponse(
   conversationHistory: EmailMessage[] = []
 ): Promise<AlphaResponse> {
   if (!anthropic) {
-    throw new Error("AI not configured");
+    throw new AIFailureError("AI not configured");
   }
 
   // Build conversation context
@@ -90,13 +139,14 @@ export async function generateAlphaResponse(
     }
   }
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 500,
-    messages: [
-      {
-        role: "user",
-        content: `You are Alpha, a casual and supportive AI accountability partner. Write a short, personal response to a user's message.
+  return withRetry(async () => {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 500,
+      messages: [
+        {
+          role: "user",
+          content: `You are Alpha, a casual and supportive AI accountability partner. Write a short, personal response to a user's message.
 
 User: ${firstName}
 Their current goal: "${currentGoal}"
@@ -122,16 +172,17 @@ Respond as JSON:
 }
 
 Only respond with valid JSON.`,
-      },
-    ],
+        },
+      ],
+    });
+
+    const content = response.content[0];
+    if (content.type !== "text") {
+      throw new Error("Unexpected response type");
+    }
+
+    return JSON.parse(content.text);
   });
-
-  const content = response.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
-
-  return JSON.parse(content.text);
 }
 
 // Generic conversation function for open-ended back-and-forth
@@ -142,7 +193,7 @@ export async function generateConversation(
   currentGoal: string | null = null
 ): Promise<string> {
   if (!anthropic) {
-    throw new Error("AI not configured");
+    throw new AIFailureError("AI not configured");
   }
 
   // Build conversation context
@@ -155,13 +206,14 @@ export async function generateConversation(
     }
   }
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 500,
-    messages: [
-      {
-        role: "user",
-        content: `You are Alpha, a casual AI friend and accountability partner. You're having an ongoing email conversation with ${firstName}.
+  return withRetry(async () => {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 500,
+      messages: [
+        {
+          role: "user",
+          content: `You are Alpha, a casual AI friend and accountability partner. You're having an ongoing email conversation with ${firstName}.
 
 ${currentGoal ? `Their current goal: "${currentGoal}"` : "They don't have an active goal right now."}
 
@@ -178,16 +230,17 @@ Respond naturally as Alpha:
 6. If it seems like they're done with their goal or want a new one, gently bring it up
 
 Just respond with your message text, no JSON.`,
-      },
-    ],
+        },
+      ],
+    });
+
+    const content = response.content[0];
+    if (content.type !== "text") {
+      throw new Error("Unexpected response type");
+    }
+
+    return content.text.trim();
   });
-
-  const content = response.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
-
-  return content.text.trim();
 }
 
 // Generate a summary of user's journey for their account page
@@ -199,7 +252,7 @@ export async function generateUserSummary(
   weeksActive: number
 ): Promise<string> {
   if (!anthropic) {
-    throw new Error("AI not configured");
+    throw new AIFailureError("AI not configured");
   }
 
   // Build conversation context (last 20 messages)
@@ -213,13 +266,14 @@ export async function generateUserSummary(
     }
   }
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 300,
-    messages: [
-      {
-        role: "user",
-        content: `Write a brief, personal summary of this user's journey with Alpha (the AI accountability partner). This will be shown on their account page.
+  return withRetry(async () => {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 300,
+      messages: [
+        {
+          role: "user",
+          content: `Write a brief, personal summary of this user's journey with Alpha (the AI accountability partner). This will be shown on their account page.
 
 User: ${firstName}
 Weeks active: ${weeksActive}
@@ -235,14 +289,15 @@ Write 2-3 sentences that:
 4. Focus on their progress and journey, not stats
 
 Just write the summary text, nothing else.`,
-      },
-    ],
+        },
+      ],
+    });
+
+    const content = response.content[0];
+    if (content.type !== "text") {
+      throw new Error("Unexpected response type");
+    }
+
+    return content.text.trim();
   });
-
-  const content = response.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
-
-  return content.text.trim();
 }

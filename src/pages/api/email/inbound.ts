@@ -1,9 +1,37 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
 import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
-import { parseUserReply, generateAlphaResponse, generateConversation, generateUserSummary, type EmailMessage } from "../../../lib/ai";
+import { parseUserReply, generateAlphaResponse, generateConversation, generateUserSummary, AIFailureError, type EmailMessage } from "../../../lib/ai";
 
 const APP_URL = import.meta.env.PUBLIC_APP_URL || "https://bealphamail.com";
+
+// Send a fallback email when AI fails
+async function sendFallbackEmail(
+  email: string,
+  firstName: string,
+  subject: string
+) {
+  const replySubject = (subject || "").toLowerCase().startsWith("re:") 
+    ? subject 
+    : "re: " + (subject || "check-in");
+
+  const responseText = `hey, i got your message but i'm having a bit of trouble processing it right now. can you try sending that again in a few minutes?
+
+sorry about that - sometimes my brain needs a quick reboot.`;
+
+  const responseHtml = wrapEmailHtml(`
+    <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${firstName}</p>
+    <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${responseText}</p>
+    <p style="font-size: 16px; color: #6b7280;">- alpha</p>
+  `);
+
+  await sendEmail({
+    to: email,
+    subject: replySubject,
+    html: responseHtml,
+    text: wrapEmailText(`yo ${firstName}\n\n${responseText}\n\n- alpha`),
+  });
+}
 
 // Helper to extract email addresses from CC header
 function parseCCEmails(ccHeader: string | undefined): string[] {
@@ -151,14 +179,55 @@ export const POST: APIRoute = async ({ request }) => {
       ? subject 
       : "re: " + (subject || "check-in");
 
+    // Check if user is confirming group creation
+    const groupResult = await checkAndCreateGroup(supabase, profile.user_id, userMessage, firstName);
+    if (groupResult.created) {
+      // User confirmed group creation - send confirmation and return
+      const responseHtml = wrapEmailHtml(`
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${firstName}</p>
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${groupResult.groupNote}</p>
+        <p style="font-size: 16px; color: #6b7280;">- alpha</p>
+      `);
+
+      await sendEmail({
+        to: profile.email,
+        subject: replySubject,
+        html: responseHtml,
+        text: wrapEmailText(`yo ${firstName}\n\n${groupResult.groupNote}\n\n- alpha`),
+      });
+
+      await supabase.from("emails").insert({
+        user_id: profile.user_id,
+        direction: "outbound",
+        subject: replySubject,
+        content: groupResult.groupNote,
+        thread_id: threadId,
+      });
+
+      return new Response(JSON.stringify({ success: true, action: "group_created" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     if (!currentGoal) {
       // No active goal - use general conversation AI
-      const alphaResponse = await generateConversation(
-        firstName,
-        userMessage,
-        conversationHistory,
-        null
-      );
+      let alphaResponse: string;
+      try {
+        alphaResponse = await generateConversation(
+          firstName,
+          userMessage,
+          conversationHistory,
+          null
+        );
+      } catch (error) {
+        console.error("AI failed for conversation:", error);
+        await sendFallbackEmail(profile.email, firstName, subject);
+        return new Response(JSON.stringify({ success: true, action: "fallback_sent" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
       // Check if user is setting a new goal in their message
       const goalMatch = userMessage.toLowerCase().match(/(?:goal|want to|going to|plan to|trying to|will)\s+(.+)/i);
@@ -215,7 +284,17 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     // Parse the user's reply with AI
-    const parsed = await parseUserReply(userMessage, currentGoal.description);
+    let parsed;
+    try {
+      parsed = await parseUserReply(userMessage, currentGoal.description);
+    } catch (error) {
+      console.error("AI failed for parsing:", error);
+      await sendFallbackEmail(profile.email, firstName, subject);
+      return new Response(JSON.stringify({ success: true, action: "fallback_sent" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // Update the goal if completed
     if (parsed.completed) {
@@ -246,12 +325,22 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     // Generate Alpha's response with conversation history
-    const alphaResponse = await generateAlphaResponse(
-      firstName,
-      currentGoal.description,
-      parsed,
-      conversationHistory
-    );
+    let alphaResponse;
+    try {
+      alphaResponse = await generateAlphaResponse(
+        firstName,
+        currentGoal.description,
+        parsed,
+        conversationHistory
+      );
+    } catch (error) {
+      console.error("AI failed for response generation:", error);
+      await sendFallbackEmail(profile.email, firstName, subject);
+      return new Response(JSON.stringify({ success: true, action: "fallback_sent" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // Build response email
     let responseText = alphaResponse.message;
@@ -446,6 +535,95 @@ see you on the other side.`;
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+// Check if user is confirming group creation
+async function checkAndCreateGroup(
+  supabase: ReturnType<typeof createServerClient>,
+  userId: string,
+  userMessage: string,
+  firstName: string
+): Promise<{ created: boolean; groupNote: string }> {
+  const lowerMessage = userMessage.toLowerCase();
+  
+  // Check if user is confirming group creation
+  // Look for patterns like "yes", "yes add", "yeah", "sure", "let's do it"
+  const confirmPatterns = /^(yes|yeah|yep|sure|ok|okay|let'?s do it|add them|create.*group)/i;
+  if (!confirmPatterns.test(lowerMessage.trim())) {
+    return { created: false, groupNote: "" };
+  }
+
+  // Check recent outbound emails for group invitation context
+  const { data: recentEmails } = await supabase
+    .from("emails")
+    .select("content")
+    .eq("user_id", userId)
+    .eq("direction", "outbound")
+    .order("created_at", { ascending: false })
+    .limit(3);
+
+  const recentContent = (recentEmails || []).map(e => e.content).join(" ");
+  
+  // Check if we recently asked about group accountability
+  if (!recentContent.includes("group accountability") && 
+      !recentContent.includes("group goals") &&
+      !recentContent.includes("cc'd")) {
+    return { created: false, groupNote: "" };
+  }
+
+  // Extract names mentioned in confirmation (e.g., "yes, add John")
+  const addMatch = lowerMessage.match(/(?:add|with|include)\s+([\w\s,]+)/i);
+  let targetNames = addMatch ? addMatch[1].split(/[,\s]+/).filter(n => n.length > 1) : [];
+
+  // Find users to add - look in recent emails for mentioned users
+  const namePattern = /cc'd\s+([\w\s,]+?)\s*[-–—]/i;
+  const ccMatch = recentContent.match(namePattern);
+  if (ccMatch && targetNames.length === 0) {
+    targetNames = ccMatch[1].split(/[,\s]+/).filter(n => n.length > 1);
+  }
+
+  // Try to find users by first name
+  if (targetNames.length > 0) {
+    const { data: targetProfiles } = await supabase
+      .from("profiles")
+      .select("user_id, first_name, email")
+      .in("first_name", targetNames.map(n => n.charAt(0).toUpperCase() + n.slice(1).toLowerCase()));
+
+    if (targetProfiles && targetProfiles.length > 0) {
+      // Create the group
+      const { data: group } = await supabase
+        .from("groups")
+        .insert({ created_by: userId })
+        .select("id")
+        .single();
+
+      if (group) {
+        // Add creator to group
+        await supabase.from("group_members").insert({
+          group_id: group.id,
+          user_id: userId,
+        });
+
+        // Add other members
+        for (const profile of targetProfiles) {
+          await supabase.from("group_members").insert({
+            group_id: group.id,
+            user_id: profile.user_id,
+          });
+        }
+
+        const memberNames = targetProfiles.map(p => p.first_name).join(" and ");
+        console.log(`Created group ${group.id} with ${firstName} and ${memberNames}`);
+
+        return {
+          created: true,
+          groupNote: `done! i've created an accountability group with you and ${memberNames}. i'll check in with all of you together on sundays now. you can reply-all to keep everyone in the loop, or just reply to me directly if you want to chat 1:1.`,
+        };
+      }
+    }
+  }
+
+  return { created: false, groupNote: "" };
 }
 
 // Handle CC'd users

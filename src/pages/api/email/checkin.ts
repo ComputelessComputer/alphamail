@@ -21,6 +21,7 @@ export const POST: APIRoute = async ({ request }) => {
     const supabase = createServerClient();
 
     // Get all users with active (incomplete) goals
+    // Skip users with bounced or complained email status
     const { data: goals, error: goalsError } = await supabase
       .from("goals")
       .select(`
@@ -31,7 +32,8 @@ export const POST: APIRoute = async ({ request }) => {
         profiles!inner (
           email,
           first_name,
-          onboarded
+          onboarded,
+          email_status
         )
       `)
       .eq("completed", false)
@@ -53,10 +55,19 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     let sent = 0;
+    let skipped = 0;
     const errors: string[] = [];
 
     for (const goal of goals) {
       const profile = goal.profiles as any;
+      
+      // Skip users with bounced or complained emails
+      if (profile.email_status && profile.email_status !== "active") {
+        console.log(`Skipping ${profile.email} - email status: ${profile.email_status}`);
+        skipped++;
+        continue;
+      }
+      
       const firstName = profile.first_name || "there";
       const email = profile.email;
 
@@ -129,9 +140,98 @@ hit reply and tell me what happened. the good, the bad, whatever. then give me y
       }
     }
 
+    // Also send group check-ins
+    let groupsSent = 0;
+    const { data: groups } = await supabase
+      .from("groups")
+      .select(`
+        id,
+        group_members (
+          user_id,
+          profiles (
+            email,
+            first_name,
+            email_status
+          )
+        ),
+        group_goals (
+          id,
+          description,
+          completed
+        )
+      `);
+
+    if (groups && groups.length > 0) {
+      for (const group of groups) {
+        const members = group.group_members as any[] || [];
+        const activeGoal = (group.group_goals as any[] || []).find((g: any) => !g.completed);
+        
+        if (!activeGoal || members.length < 2) continue;
+
+        // Get active member emails
+        const activeMembers = members.filter(
+          m => m.profiles?.email_status !== "bounced" && m.profiles?.email_status !== "complained"
+        );
+
+        if (activeMembers.length < 2) continue;
+
+        const memberNames = activeMembers.map(m => m.profiles?.first_name || "someone").join(" and ");
+        const memberEmails = activeMembers.map(m => m.profiles?.email).filter(Boolean);
+
+        const html = wrapEmailHtml(`
+          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            yo ${memberNames}
+          </p>
+          
+          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            sunday group check-in time. 👀
+          </p>
+
+          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            your group goal was: <strong>${activeGoal.description}</strong>
+          </p>
+
+          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            so... how'd you both do? reply-all so your partner can see, or reply just to me if you want to chat privately.
+          </p>
+
+          <p style="font-size: 16px; color: #6b7280;">
+            - alpha
+          </p>
+        `);
+
+        const text = wrapEmailText(`yo ${memberNames}
+
+sunday group check-in time. 👀
+
+your group goal was: ${activeGoal.description}
+
+so... how'd you both do? reply-all so your partner can see, or reply just to me if you want to chat privately.
+
+- alpha`);
+
+        try {
+          // Send to all members
+          for (const email of memberEmails) {
+            await sendEmail({
+              to: email,
+              subject: "sunday group check-in",
+              html,
+              text,
+            });
+          }
+          groupsSent++;
+        } catch (err: any) {
+          console.error(`Failed to send group check-in:`, err);
+        }
+      }
+    }
+
     return new Response(JSON.stringify({ 
-      message: `Sent ${sent} check-in emails`,
+      message: `Sent ${sent} individual + ${groupsSent} group check-in emails`,
       sent,
+      groupsSent,
+      skipped: skipped > 0 ? skipped : undefined,
       errors: errors.length > 0 ? errors : undefined,
     }), {
       status: 200,
