@@ -108,13 +108,21 @@ hit reply and tell me what happened. the good, the bad, whatever. then give me y
           text,
         });
 
-        // Log the email
-        await supabase.from("emails").insert({
+        // Log the email and create new thread
+        const { data: emailRecord } = await supabase.from("emails").insert({
           user_id: goal.user_id,
           direction: "outbound",
           subject: "sunday check-in",
           content: text,
-        });
+        }).select("id").single();
+
+        // Set thread_id to this email's id (starts new thread)
+        if (emailRecord) {
+          await supabase
+            .from("emails")
+            .update({ thread_id: emailRecord.id })
+            .eq("id", emailRecord.id);
+        }
 
         sent++;
       } catch (err: any) {
