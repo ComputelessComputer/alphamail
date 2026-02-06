@@ -302,6 +302,77 @@ Only respond with valid JSON.`,
   });
 }
 
+// Conversational onboarding - naturally extract name + goal across multiple messages
+export interface OnboardingConversationResult {
+  complete: boolean;
+  name?: string;
+  goal?: string;
+  reply: string; // Alpha's natural reply (used when complete is false)
+}
+
+export async function onboardingConversation(
+  latestMessage: string,
+  conversationHistory: EmailMessage[] = []
+): Promise<OnboardingConversationResult> {
+  if (!anthropic) {
+    throw new AIFailureError("AI not configured");
+  }
+
+  let conversationContext = "";
+  if (conversationHistory.length > 0) {
+    conversationContext = `\nConversation so far (oldest first):\n---\n`;
+    for (const msg of conversationHistory) {
+      const speaker = msg.direction === "inbound" ? "User" : "Alpha";
+      conversationContext += `${speaker}: ${msg.content}\n---\n`;
+    }
+  }
+
+  return withRetry(async () => {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 500,
+      messages: [
+        {
+          role: "user",
+          content: `You are Alpha, a casual AI accountability partner. A new user is emailing you for the first time. You need to learn their name and a goal for the week, but you should do this through natural conversation, not by rigidly asking for fields.
+
+${conversationContext}
+User's latest message:
+"""${latestMessage}"""
+
+Look at the ENTIRE conversation (all messages, not just the latest) to figure out if you have both their name and a goal.
+
+Respond as JSON:
+{
+  "complete": true/false (true ONLY if you have BOTH a name and a goal from anywhere in the conversation),
+  "name": "their first name if found anywhere in the conversation",
+  "goal": "their goal, cleaned up to be concise and actionable",
+  "reply": "your natural response as Alpha"
+}
+
+Rules:
+- Be generous in parsing. Names and goals can come from ANY message in the conversation, not just the latest one.
+- If you already know their name from a previous message, you don't need to ask again.
+- If you already know their goal from a previous message, you don't need to ask again.
+- When complete is true, make your reply a welcome/confirmation message.
+- When complete is false, have a natural conversation. Don't say "i need your name and goal". Instead, be friendly and steer the conversation. For example if they just said "hey", you might say "hey! i'm alpha. what's your name?" or if they gave their name, acknowledge it and ask what they're working on this week.
+- Keep replies casual, lowercase, brief (2-3 sentences).
+- Don't use emojis or em-dashes.
+
+Only respond with valid JSON.`,
+        },
+      ],
+    });
+
+    const content = response.content[0];
+    if (content.type !== "text") {
+      throw new Error("Unexpected response type");
+    }
+
+    return JSON.parse(content.text);
+  });
+}
+
 // Generate a summary of user's journey for their account page
 export async function generateUserSummary(
   firstName: string,
