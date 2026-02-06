@@ -4,10 +4,17 @@ import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
 
 const APP_URL = import.meta.env.PUBLIC_APP_URL || "https://bealphamail.com";
 
+function redirect(location: string) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: location },
+  });
+}
+
 export const GET: APIRoute = async ({ url }) => {
   const token = url.searchParams.get("token");
   if (!token) {
-    return Response.redirect(`${APP_URL}/signup`, 302);
+    return redirect(`${APP_URL}/signup`);
   }
 
   try {
@@ -16,14 +23,14 @@ export const GET: APIRoute = async ({ url }) => {
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) {
       console.error("Token validation failed:", error?.message);
-      return Response.redirect(`${APP_URL}/signup`, 302);
+      return redirect(`${APP_URL}/signup`);
     }
 
     await sendOnboardingEmail(supabase, user.email!, user.id);
-    return Response.redirect(`${APP_URL}/welcome?done=1`, 302);
+    return redirect(`${APP_URL}/welcome?done=1`);
   } catch (error: any) {
     console.error("Onboarding GET error:", error);
-    return Response.redirect(`${APP_URL}/welcome?done=1`, 302);
+    return redirect(`${APP_URL}/welcome?done=1`);
   }
 };
 
