@@ -30,19 +30,37 @@ export const POST: APIRoute = async ({ request }) => {
     const supabase = createServerClient();
 
     // Create user
+    let userId: string | undefined;
+
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password: crypto.randomUUID(),
       email_confirm: true,
     });
 
-    if (authError && !authError.message.includes("already registered")) {
-      throw authError;
+    if (authError) {
+      // If user already exists, look them up
+      if (authError.message.includes("already") || authError.message.includes("exists")) {
+        const { data: { users } } = await supabase.auth.admin.listUsers();
+        const existingUser = users?.find(u => u.email === email);
+        if (existingUser) {
+          userId = existingUser.id;
+        }
+      }
+
+      if (!userId) {
+        console.error("Auth error:", authError.message, authError);
+        return new Response(JSON.stringify({ error: "Could not create account. Please try again." }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      userId = authData?.user?.id;
     }
 
-    const userId = authData?.user?.id;
     if (!userId) {
-      return new Response(JSON.stringify({ error: "Could not create user" }), {
+      return new Response(JSON.stringify({ error: "Could not create account. Please try again." }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });

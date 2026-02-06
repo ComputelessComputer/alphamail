@@ -27,9 +27,10 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           <button
             type="submit"
             id="send-btn"
-            class="w-28 h-8 inline-flex items-center justify-center gap-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-t from-blue-600 to-blue-500 shadow-sm hover:shadow-md hover:scale-[102%] active:scale-[98%] transition-all cursor-pointer"
+            class="w-20 h-8 inline-flex items-center justify-center gap-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-t from-blue-600 to-blue-500 shadow-sm hover:shadow-md hover:scale-[102%] active:scale-[98%] transition-all cursor-pointer"
           >
             <span id="send-text">Send</span>
+            <svg id="send-spinner" class="hidden animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
             <kbd id="send-kbd" class="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-blue-200 font-normal"><span class="kbd-mod"></span><span>&#9166;</span></kbd>
           </button>
         </div>
@@ -90,10 +91,20 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   const composeForm = document.getElementById("compose-form") as HTMLFormElement;
   const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
   const sendText = document.getElementById("send-text") as HTMLSpanElement;
+  const sendSpinner = document.getElementById("send-spinner") as SVGElement;
+  const sendKbd = document.getElementById("send-kbd") as HTMLElement;
   const emailInput = document.getElementById("email-input") as HTMLInputElement;
   const messageInput = document.getElementById("message-input") as HTMLTextAreaElement;
   const formError = document.getElementById("form-error") as HTMLDivElement;
   const successState = document.getElementById("success-state") as HTMLDivElement;
+
+  function setLoading(loading: boolean) {
+    sendBtn.disabled = loading;
+    sendText.classList.toggle("hidden", loading);
+    sendSpinner.classList.toggle("hidden", !loading);
+    sendKbd.classList.toggle("sm:inline-flex", !loading);
+    sendKbd.classList.toggle("hidden", loading);
+  }
 
   // Show platform-appropriate modifier key
   const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
@@ -118,8 +129,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   composeForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     formError.classList.add("hidden");
-    sendBtn.disabled = true;
-    sendText.textContent = "Sending...";
+    setLoading(true);
 
     const email = emailInput.value.trim();
     const message = messageInput.value.trim();
@@ -127,8 +137,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     if (!message) {
       formError.textContent = "write something to alpha first";
       formError.classList.remove("hidden");
-      sendBtn.disabled = false;
-      sendText.textContent = "Send";
+      setLoading(false);
       return;
     }
 
@@ -145,8 +154,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         if (data.error === "parse_failed") {
           formError.textContent = data.clarification;
           formError.classList.remove("hidden");
-          sendBtn.disabled = false;
-          sendText.textContent = "Send";
+          setLoading(false);
           return;
         }
         throw new Error(data.error || "something went wrong");
@@ -158,8 +166,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     } catch (err: any) {
       formError.textContent = err.message || "something went wrong";
       formError.classList.remove("hidden");
-      sendBtn.disabled = false;
-      sendText.textContent = "Send";
+      setLoading(false);
     }
   });
 </script>
