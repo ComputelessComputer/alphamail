@@ -2,80 +2,26 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 ---
 
-<BaseLayout title="AlphaMail — Complete Your Profile">
+<BaseLayout title="AlphaMail — Check Your Email">
   <div class="w-full">
     <div class="w-full max-w-md mx-auto px-6 sm:px-8 py-12">
-      <div class="text-center mb-8">
-        <h1 class="text-3xl font-['Song_Myung'] tracking-tight">Welcome to AlphaMail</h1>
-        <p class="text-neutral-600 mt-2">Let's get you set up for your first weekly check-in</p>
+      <!-- Shown to users who already completed onboarding -->
+      <div id="already-onboarded" class="hidden text-center">
+        <p class="text-neutral-600">Redirecting to your account...</p>
       </div>
 
-      <form id="onboarding-form" class="space-y-6">
-        <div class="space-y-4">
-          <h2 class="text-lg font-medium text-neutral-900">About you</h2>
-          
-          <div>
-            <label for="first_name" class="block text-sm font-medium text-neutral-700 mb-1">
-              First name
-            </label>
-            <input
-              type="text"
-              id="first_name"
-              name="first_name"
-              required
-              maxlength="50"
-              placeholder="Jamie"
-              class="w-full h-11 px-4 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label for="last_name" class="block text-sm font-medium text-neutral-700 mb-1">
-              Last name
-            </label>
-            <input
-              type="text"
-              id="last_name"
-              name="last_name"
-              required
-              maxlength="50"
-              placeholder="Lee"
-              class="w-full h-11 px-4 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-            />
-          </div>
-        </div>
-
-        <div class="space-y-4 pt-4 border-t border-neutral-100">
-          <h2 class="text-lg font-medium text-neutral-900">Your first goal</h2>
-          <p class="text-sm text-neutral-500">What do you want to accomplish this week? Be specific.</p>
-          
-          <div>
-            <label for="goal" class="block text-sm font-medium text-neutral-700 mb-1">
-              Weekly goal
-            </label>
-            <textarea
-              id="goal"
-              name="goal"
-              required
-              maxlength="500"
-              rows="3"
-              placeholder="Example: Finish the landing page design and get feedback from 3 people"
-              class="w-full px-4 py-3 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 resize-none"
-            ></textarea>
-            <p class="text-xs text-neutral-400 mt-1" id="goal-counter">0/500 characters</p>
-          </div>
-        </div>
-
-        <div id="error-message" class="hidden text-red-600 text-sm p-3 bg-red-50 rounded-xl"></div>
-
-        <button
-          type="submit"
-          id="submit-btn"
-          class="w-full h-11 rounded-full text-white text-sm font-medium bg-gradient-to-t from-blue-600 to-blue-500 shadow-md hover:shadow-lg hover:scale-[102%] active:scale-[98%] transition-all cursor-pointer"
-        >
-          Start my journey
-        </button>
-      </form>
+      <!-- Default: check your email message -->
+      <div id="check-email" class="text-center">
+        <div class="text-5xl mb-6">✉️</div>
+        <h1 class="text-3xl font-['Song_Myung'] tracking-tight mb-4">check your email!</h1>
+        <p class="text-neutral-600 text-lg leading-relaxed">
+          alpha just sent you an email.<br>
+          <strong>reply to it</strong> with your name and a goal to get started.
+        </p>
+        <p class="text-neutral-400 text-sm mt-6">
+          didn't get it? check your spam folder or <a href="/signup" class="text-blue-600 underline">try again</a>
+        </p>
+      </div>
     </div>
   </div>
 </BaseLayout>
@@ -83,13 +29,10 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 <script>
   import { supabase } from "../lib/supabase";
 
-  // Check if user is logged in
+  // If user is already onboarded, redirect to account
   const { data: { user } } = await supabase.auth.getUser();
   
-  if (!user) {
-    window.location.href = "/signin";
-  } else {
-    // Check if user is already onboarded
+  if (user) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("onboarded")
@@ -97,104 +40,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       .single();
 
     if (profile?.onboarded) {
-      // Already onboarded, redirect to account
+      document.getElementById("check-email")!.classList.add("hidden");
+      document.getElementById("already-onboarded")!.classList.remove("hidden");
       window.location.href = "/account";
     }
   }
-
-  const form = document.getElementById("onboarding-form") as HTMLFormElement;
-  const errorDiv = document.getElementById("error-message") as HTMLDivElement;
-  const submitBtn = document.getElementById("submit-btn") as HTMLButtonElement;
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    errorDiv.classList.add("hidden");
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Setting up...";
-
-    const formData = new FormData(form);
-    const firstName = (formData.get("first_name") as string).trim();
-    const lastName = (formData.get("last_name") as string).trim();
-    const goal = (formData.get("goal") as string).trim();
-
-    // Client-side validation
-    if (firstName.length === 0 || firstName.length > 50) {
-      throw new Error("First name must be between 1 and 50 characters");
-    }
-    if (lastName.length === 0 || lastName.length > 50) {
-      throw new Error("Last name must be between 1 and 50 characters");
-    }
-    if (goal.length === 0 || goal.length > 500) {
-      throw new Error("Goal must be between 1 and 500 characters");
-    }
-
-    try {
-      // Update profile
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          first_name: firstName,
-          last_name: lastName,
-          onboarded: true,
-        })
-        .eq("user_id", user!.id);
-
-      if (profileError) throw profileError;
-
-      // Create first goal (due next Sunday)
-      const nextSunday = new Date();
-      nextSunday.setDate(nextSunday.getDate() + (7 - nextSunday.getDay()));
-      
-      const { error: goalError } = await supabase
-        .from("goals")
-        .insert({
-          user_id: user!.id,
-          description: goal,
-          due_date: nextSunday.toISOString().split("T")[0],
-        });
-
-      if (goalError) throw goalError;
-
-      // Link any pending emails from before signup
-      await fetch("/api/user/link-pending-emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user!.id, email: user!.email }),
-      });
-
-      // Trigger welcome email (via API)
-      await fetch("/api/email/welcome", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user!.id }),
-      });
-
-      // Redirect to account
-      window.location.href = "/account";
-    } catch (err: any) {
-      errorDiv.textContent = err.message || "Something went wrong";
-      errorDiv.classList.remove("hidden");
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Start my journey";
-    }
-  });
-
-  // Character counter for goal
-  const goalTextarea = document.getElementById("goal") as HTMLTextAreaElement;
-  const goalCounter = document.getElementById("goal-counter") as HTMLParagraphElement;
-  
-  goalTextarea.addEventListener("input", () => {
-    const length = goalTextarea.value.length;
-    goalCounter.textContent = `${length}/500 characters`;
-    if (length > 450) {
-      goalCounter.classList.add("text-amber-500");
-      goalCounter.classList.remove("text-neutral-400", "text-red-500");
-    } else if (length >= 500) {
-      goalCounter.classList.add("text-red-500");
-      goalCounter.classList.remove("text-neutral-400", "text-amber-500");
-    } else {
-      goalCounter.classList.add("text-neutral-400");
-      goalCounter.classList.remove("text-amber-500", "text-red-500");
-    }
-  });
 </script>

@@ -243,6 +243,65 @@ Just respond with your message text, no JSON.`,
   });
 }
 
+// Parse onboarding reply to extract name and first goal
+export interface OnboardingInfo {
+  name: string;
+  goal: string;
+  parsed: boolean; // false if we couldn't extract the info
+  clarificationMessage?: string; // message to send if we need more info
+}
+
+export async function parseOnboardingReply(
+  userMessage: string
+): Promise<OnboardingInfo> {
+  if (!anthropic) {
+    throw new AIFailureError("AI not configured");
+  }
+
+  return withRetry(async () => {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 500,
+      messages: [
+        {
+          role: "user",
+          content: `You are parsing a new user's reply to an onboarding email. They were asked to share their name and a goal for the week.
+
+Their reply:
+"""
+${userMessage}
+"""
+
+Extract the following as JSON:
+{
+  "name": "their first name (just the first name, not full name)",
+  "goal": "their goal for the week, cleaned up to be concise and actionable",
+  "parsed": true/false (true if you could extract BOTH name and goal),
+  "clarificationMessage": "a casual message asking for what's missing (only if parsed is false)"
+}
+
+Rules:
+- Be generous in parsing - people write in all sorts of ways
+- If they say "I'm John and I want to run 3 times" → name: "John", goal: "run 3 times this week"
+- If they just say "Sarah" with no goal, set parsed: false and ask for a goal
+- If they just describe a goal with no name, set parsed: false and ask for their name
+- If the message is unclear or off-topic, set parsed: false
+- For clarificationMessage, write as Alpha (casual, lowercase, friendly)
+
+Only respond with valid JSON.`,
+        },
+      ],
+    });
+
+    const content = response.content[0];
+    if (content.type !== "text") {
+      throw new Error("Unexpected response type");
+    }
+
+    return JSON.parse(content.text);
+  });
+}
+
 // Generate a summary of user's journey for their account page
 export async function generateUserSummary(
   firstName: string,

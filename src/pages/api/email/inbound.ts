@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
 import { sendEmail, wrapEmailHtml, wrapEmailText, escapeHtml, escapeLikePattern } from "../../../lib/resend";
-import { parseUserReply, generateAlphaResponse, generateConversation, generateUserSummary, AIFailureError, type EmailMessage } from "../../../lib/ai";
+import { parseUserReply, generateAlphaResponse, generateConversation, generateUserSummary, parseOnboardingReply, AIFailureError, type EmailMessage } from "../../../lib/ai";
 import { 
   verifyResendWebhook, 
   checkRateLimit, 
@@ -102,14 +102,20 @@ export const POST: APIRoute = async ({ request }) => {
     // Find user by email
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("user_id, first_name, email")
+      .select("user_id, first_name, email, onboarded")
       .eq("email", senderEmail)
       .single();
 
-    // Handle non-authenticated users
+    // Handle non-authenticated users (no profile at all)
     if (profileError || !profile) {
       console.log("New sender (not signed up):", senderEmail);
       return await handleNonAuthenticatedUser(supabase, senderEmail, subject, userMessage, ccEmails);
+    }
+
+    // Handle users who have a profile but haven't completed onboarding
+    if (!profile.onboarded) {
+      console.log("User not onboarded yet, processing onboarding reply:", senderEmail);
+      return await handleOnboardingReply(supabase, profile.user_id, senderEmail, subject, userMessage);
     }
 
     const firstName = profile.first_name || "there";
@@ -475,6 +481,161 @@ async function updateUserSummary(
     console.log(`Updated summary for user ${userId}`);
   } catch (error) {
     console.error("Failed to update user summary:", error);
+  }
+}
+
+// Handle onboarding replies from users who signed up but haven't completed onboarding
+async function handleOnboardingReply(
+  supabase: ReturnType<typeof createServerClient>,
+  userId: string,
+  senderEmail: string,
+  subject: string | undefined,
+  userMessage: string
+) {
+  const replySubject = (subject || "").toLowerCase().startsWith("re:") 
+    ? subject 
+    : "re: " + (subject || "let's get you set up");
+
+  try {
+    // Parse name + goal from their reply
+    const onboarding = await parseOnboardingReply(userMessage);
+
+    if (!onboarding.parsed) {
+      // Couldn't extract both name and goal - ask for clarification
+      const clarification = onboarding.clarificationMessage || 
+        "hmm, i couldn't quite catch that. can you reply with your name and a goal for this week? like: 'i'm jamie. my goal is to run 3 times.'";
+
+      const safeMsg = escapeHtml(clarification);
+      const responseHtml = wrapEmailHtml(`
+        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${safeMsg}</p>
+        <p style="font-size: 16px; color: #6b7280;">- alpha</p>
+      `);
+
+      await sendEmail({
+        to: senderEmail,
+        subject: replySubject,
+        html: responseHtml,
+        text: wrapEmailText(`${clarification}\n\n- alpha`),
+      });
+
+      // Store the emails
+      await supabase.from("emails").insert([
+        { user_id: userId, direction: "inbound", subject: subject || "onboarding", content: userMessage },
+        { user_id: userId, direction: "outbound", subject: replySubject, content: clarification },
+      ]);
+
+      return new Response(JSON.stringify({ success: true, action: "onboarding_clarification" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Successfully parsed! Complete onboarding
+    const firstName = onboarding.name;
+    const goalDescription = onboarding.goal;
+
+    // Update profile with name and mark as onboarded
+    await supabase
+      .from("profiles")
+      .update({
+        first_name: firstName,
+        onboarded: true,
+      })
+      .eq("user_id", userId);
+
+    // Confirm user email via admin API (replying = email is valid)
+    await supabase.auth.admin.updateUserById(userId, {
+      email_confirm: true,
+    });
+
+    // Create their first goal
+    const nextSunday = new Date();
+    nextSunday.setDate(nextSunday.getDate() + (7 - nextSunday.getDay()));
+
+    await supabase.from("goals").insert({
+      user_id: userId,
+      description: goalDescription,
+      due_date: nextSunday.toISOString().split("T")[0],
+    });
+
+    // Link any pending emails
+    const { data: pendingEmails } = await supabase
+      .from("pending_emails")
+      .select("*")
+      .eq("email", senderEmail);
+
+    if (pendingEmails && pendingEmails.length > 0) {
+      for (const pe of pendingEmails) {
+        await supabase.from("emails").insert({
+          user_id: userId,
+          direction: "inbound",
+          subject: pe.subject,
+          content: pe.content,
+        });
+      }
+      await supabase.from("pending_emails").delete().eq("email", senderEmail);
+    }
+
+    // Send welcome confirmation
+    const safeFirstName = escapeHtml(firstName);
+    const safeGoal = escapeHtml(goalDescription);
+    const responseText = `nice to meet you, ${firstName}! you're all set. \u2705
+
+your goal: ${goalDescription}
+
+i'll check in with you sunday to see how it went. just reply to that email when it comes.
+
+until then, go crush it.`;
+
+    const responseHtml = wrapEmailHtml(`
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">yo ${safeFirstName}!</p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">nice to meet you! you're all set. \u2705</p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">your goal: <strong>${safeGoal}</strong></p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">i'll check in with you sunday to see how it went. just reply to that email when it comes.</p>
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">until then, go crush it.</p>
+      <p style="font-size: 16px; color: #6b7280;">- alpha</p>
+    `);
+
+    await sendEmail({
+      to: senderEmail,
+      subject: replySubject,
+      html: responseHtml,
+      text: wrapEmailText(responseText + "\n\n- alpha"),
+    });
+
+    // Store emails
+    await supabase.from("emails").insert([
+      { user_id: userId, direction: "inbound", subject: subject || "onboarding", content: userMessage },
+      { user_id: userId, direction: "outbound", subject: replySubject, content: responseText },
+    ]);
+
+    console.log(`Onboarding complete for ${senderEmail}: name=${firstName}, goal=${goalDescription}`);
+
+    return new Response(JSON.stringify({ success: true, action: "onboarding_complete" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    console.error("Onboarding reply processing failed:", error);
+    
+    // Send fallback
+    const fallbackText = "hey! i got your reply but had a little trouble processing it. can you try again? just tell me your name and a goal for this week.";
+    const responseHtml = wrapEmailHtml(`
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap;">${escapeHtml(fallbackText)}</p>
+      <p style="font-size: 16px; color: #6b7280;">- alpha</p>
+    `);
+
+    await sendEmail({
+      to: senderEmail,
+      subject: replySubject,
+      html: responseHtml,
+      text: wrapEmailText(`${fallbackText}\n\n- alpha`),
+    });
+
+    return new Response(JSON.stringify({ success: true, action: "onboarding_fallback" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
 
