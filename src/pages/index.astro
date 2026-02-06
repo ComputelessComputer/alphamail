@@ -20,8 +20,8 @@ const ctaNote = "Free during early access";
         </p>
       </div>
 
-      <!-- Mock Email Client -->
-      <div class="rounded-xl bg-white/80 backdrop-blur-xl shadow-2xl border border-white/20 ring-1 ring-black/5 overflow-hidden flex flex-col w-full text-left mb-10">
+      <!-- Email Compose View -->
+      <form id="signup-form" class="rounded-xl bg-white/80 backdrop-blur-xl shadow-2xl border border-white/20 ring-1 ring-black/5 overflow-hidden flex flex-col w-full text-left mb-10">
         <!-- Window Chrome / Toolbar -->
         <div class="h-12 bg-gradient-to-b from-[#f6f6f6] to-[#e8e8e8] border-b border-[#d1d1d1] flex items-center justify-between px-4 shadow-[0_1px_0_rgba(255,255,255,0.5)_inset]">
           <div class="flex gap-2">
@@ -29,38 +29,55 @@ const ctaNote = "Free during early access";
             <div class="w-3 h-3 rounded-full bg-[#FEBC2E] border border-[#DFA023]/30 shadow-sm"></div>
             <div class="w-3 h-3 rounded-full bg-[#28C840] border border-[#1AAB29]/30 shadow-sm"></div>
           </div>
-          <a
-            id="cta-btn"
-            href="/signup"
+          <button
+            type="submit"
+            id="send-btn"
             class="px-4 h-7 inline-flex items-center rounded-md text-xs font-medium text-white bg-gradient-to-t from-blue-600 to-blue-500 shadow-sm hover:shadow-md hover:scale-[102%] active:scale-[98%] transition-all cursor-pointer"
           >
-            <span id="cta-text">Start your first goal</span>
-          </a>
+            <span id="send-text">Send ↑</span>
+          </button>
         </div>
 
-        <!-- Email Metadata Fields -->
+        <!-- Email Compose Fields -->
         <div class="flex flex-col bg-white">
           <div class="flex items-center px-4 py-2 border-b border-[#e5e5e5]">
             <span class="text-neutral-400 w-16 text-left mr-3 text-sm font-medium">To:</span>
-            <span class="text-neutral-900 text-sm bg-blue-100/50 px-2 py-0.5 rounded text-blue-800">You</span>
-          </div>
-          <div class="flex items-center px-4 py-2 border-b border-[#e5e5e5]">
-            <span class="text-neutral-400 w-16 text-left mr-3 text-sm font-medium">Subject:</span>
-            <span class="text-neutral-900 text-sm font-medium">Sunday check-in: How's your goal going?</span>
+            <span class="text-neutral-900 text-sm">Alpha &lt;alpha@bealphamail.com&gt;</span>
           </div>
           <div class="flex items-center px-4 py-2 border-b border-[#e5e5e5]">
             <span class="text-neutral-400 w-16 text-left mr-3 text-sm font-medium">From:</span>
-            <span class="text-neutral-500 text-sm">Alpha &lt;alpha@bealphamail.com&gt;</span>
+            <input
+              type="email"
+              id="email-input"
+              name="email"
+              required
+              placeholder="you@example.com"
+              class="flex-1 text-sm text-neutral-900 bg-transparent outline-none placeholder:text-neutral-300"
+            />
+          </div>
+          <div class="flex items-center px-4 py-2 border-b border-[#e5e5e5]">
+            <span class="text-neutral-400 w-16 text-left mr-3 text-sm font-medium">Subject:</span>
+            <span class="text-neutral-900 text-sm font-medium">let's be friends</span>
           </div>
         </div>
 
-        <!-- Email Body -->
-        <div class="p-5 sm:p-6 bg-white text-neutral-800 text-sm leading-relaxed space-y-3">
-          <p>Hey! Sunday check-in time. 👀</p>
-          <p>Your goal was: <span class="font-medium">Ship the landing page</span></p>
-          <p>Did you? Hit reply — the good, bad, and next goal.</p>
-          <p class="text-neutral-500">— Alpha</p>
+        <!-- Email Body (preview of what Alpha will say) -->
+        <div class="p-5 sm:p-6 bg-neutral-50/50 text-neutral-400 text-sm leading-relaxed space-y-3 italic">
+          <p>alpha will reply with your first steps —</p>
+          <p>just enter your email and hit send.</p>
         </div>
+
+        <!-- Error/Success messages -->
+        <div id="form-error" class="hidden px-5 py-3 bg-red-50 text-red-600 text-sm"></div>
+      </form>
+
+      <!-- Success state (replaces form) -->
+      <div id="success-state" class="hidden rounded-xl bg-white/80 backdrop-blur-xl shadow-2xl border border-white/20 ring-1 ring-black/5 overflow-hidden w-full text-center p-10 mb-10">
+        <div class="text-4xl mb-4">✉️</div>
+        <h2 class="text-xl font-medium text-neutral-900 mb-2">check your email!</h2>
+        <p class="text-neutral-600" id="success-email-text">
+          alpha just sent you an email. reply to it with your name and a goal to get started.
+        </p>
       </div>
 
       <!-- CTA Note -->
@@ -72,20 +89,77 @@ const ctaNote = "Free during early access";
 <script>
   import { supabase } from "../lib/supabase";
 
-  async function updateCTA() {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    const ctaBtn = document.getElementById("cta-btn") as HTMLAnchorElement;
-    const ctaText = document.getElementById("cta-text");
-    const ctaNote = document.getElementById("cta-note");
+  const form = document.getElementById("signup-form") as HTMLFormElement;
+  const emailInput = document.getElementById("email-input") as HTMLInputElement;
+  const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+  const sendText = document.getElementById("send-text") as HTMLSpanElement;
+  const formError = document.getElementById("form-error") as HTMLDivElement;
+  const successState = document.getElementById("success-state") as HTMLDivElement;
+  const ctaNote = document.getElementById("cta-note") as HTMLParagraphElement;
 
+  // Check if user is already logged in
+  async function checkExistingUser() {
+    const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // User is logged in
-      if (ctaBtn) ctaBtn.href = "/account";
-      if (ctaText) ctaText.textContent = "Go to your account";
-      if (ctaNote) ctaNote.textContent = "Welcome back!";
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarded")
+        .eq("user_id", user.id)
+        .single();
+
+      if (profile?.onboarded) {
+        // Replace form with "welcome back" state
+        sendText.textContent = "Go to account";
+        sendBtn.type = "button";
+        sendBtn.addEventListener("click", () => {
+          window.location.href = "/account";
+        });
+        emailInput.value = user.email || "";
+        emailInput.disabled = true;
+        ctaNote.textContent = "Welcome back!";
+      }
     }
   }
+  checkExistingUser();
 
-  updateCTA();
+  // Handle form submission
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    formError.classList.add("hidden");
+    sendBtn.disabled = true;
+    sendText.textContent = "Sending...";
+
+    const email = emailInput.value.trim();
+
+    try {
+      // Create user in Supabase
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: crypto.randomUUID(),
+      });
+
+      if (error && !error.message.includes("already registered")) {
+        throw error;
+      }
+
+      // Send onboarding email from Alpha
+      const res = await fetch("/api/email/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, userId: data?.user?.id || null }),
+      });
+
+      if (!res.ok) throw new Error("Failed to send email");
+
+      // Show success
+      form.classList.add("hidden");
+      successState.classList.remove("hidden");
+      ctaNote.textContent = "";
+    } catch (err: any) {
+      formError.textContent = err.message || "Something went wrong";
+      formError.classList.remove("hidden");
+      sendBtn.disabled = false;
+      sendText.textContent = "Send \u2191";
+    }
+  });
 </script>
