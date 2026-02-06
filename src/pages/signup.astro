@@ -16,7 +16,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       </div>
 
       <!-- Compose Email -->
-      <form id="compose-form" class="relative rounded-xl bg-white/80 backdrop-blur-xl shadow-2xl border border-white/20 ring-1 ring-black/5 overflow-hidden flex flex-col w-full text-left mb-10">
+      <form id="compose-form" novalidate class="relative rounded-xl bg-white/80 backdrop-blur-xl shadow-2xl border border-white/20 ring-1 ring-black/5 overflow-hidden flex flex-col w-full text-left mb-10">
         <!-- Window Chrome / Toolbar -->
         <div class="h-12 bg-gradient-to-b from-[#f6f6f6] to-[#e8e8e8] border-b border-[#d1d1d1] flex items-center justify-between px-4 shadow-[0_1px_0_rgba(255,255,255,0.5)_inset]">
           <div class="flex gap-2">
@@ -133,6 +133,13 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
     const email = emailInput.value.trim();
     const message = messageInput.value.trim();
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      formError.textContent = "please enter a valid email";
+      formError.classList.remove("hidden");
+      setLoading(false);
+      return;
+    }
 
     if (!message) {
       formError.textContent = "write something to alpha first";

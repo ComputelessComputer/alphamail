@@ -29,42 +29,33 @@ export const POST: APIRoute = async ({ request }) => {
 
     const supabase = createServerClient();
 
-    // Create user
-    let userId: string | undefined;
-
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
+    // Create user via signUp, then confirm via admin
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email: email.trim(),
       password: crypto.randomUUID(),
-      email_confirm: true,
     });
 
-    if (authError) {
-      // If user already exists, look them up
-      if (authError.message.includes("already") || authError.message.includes("exists")) {
-        const { data: { users } } = await supabase.auth.admin.listUsers();
-        const existingUser = users?.find(u => u.email === email);
-        if (existingUser) {
-          userId = existingUser.id;
-        }
-      }
+    let userId = signUpData?.user?.id;
 
-      if (!userId) {
-        console.error("Auth error:", authError.message, authError);
-        return new Response(JSON.stringify({ error: "Could not create account. Please try again." }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-    } else {
-      userId = authData?.user?.id;
+    // If user already exists, look them up
+    if (signUpError) {
+      console.error("SignUp error:", signUpError.message);
+      const { data: { users } } = await supabase.auth.admin.listUsers();
+      const existingUser = users?.find(u => u.email === email.trim());
+      userId = existingUser?.id;
     }
 
     if (!userId) {
-      return new Response(JSON.stringify({ error: "Could not create account. Please try again." }), {
+      return new Response(JSON.stringify({ error: "could not create account. please try again." }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
+
+    // Confirm email via admin API
+    await supabase.auth.admin.updateUserById(userId, {
+      email_confirm: true,
+    });
 
     // Update profile
     await supabase.from("profiles").update({
