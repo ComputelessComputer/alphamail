@@ -1,26 +1,28 @@
-# AlphaMail ✉️
+# AlphaMail
 
-An AI-powered weekly accountability partner that lives in your inbox. No app, no complicated system — just email.
+An open-source, AI-powered weekly accountability partner that lives entirely in your inbox. No app, no dashboard -- just email.
 
 **[bealphamail.com](https://bealphamail.com)**
 
 ## How It Works
 
-1. **Sign up** with your email
-2. **Set a goal** for the week
-3. **Sunday check-in** — Alpha emails you asking how it went
-4. **Reply** with your progress and next goal
-5. **Repeat** — Alpha remembers your conversations and keeps you accountable
+1. **Sign up** -- write Alpha an email with your name and a goal from the website, or email alpha@bealphamail.com directly
+2. **Conversational onboarding** -- Alpha chats naturally to learn your name and first goal (across multiple emails if needed)
+3. **Sunday check-in** -- every Sunday, Alpha emails asking how your goal went
+4. **Reply** -- tell Alpha what happened, set your next goal
+5. **Repeat** -- Alpha remembers your full conversation history and keeps you accountable
 
 ## Features
 
-- 🤖 **AI-powered conversations** — Alpha responds personally based on your history
-- 📧 **Email-first** — Everything happens in your inbox, no app needed
-- 👥 **Group accountability** — CC a friend to create accountability pairs
-- 🔄 **Conversation threading** — Replies stay in the same email thread
-- 📊 **Journey summary** — AI-generated summary of your progress on your account page
-- 🔒 **Magic link auth** — No passwords, just click a link
-- 🛡️ **Security hardened** — Webhook verification, rate limiting, CSRF protection, CSP headers
+- **AI-powered conversations** -- Alpha responds personally using your full conversation history
+- **Email-first** -- everything happens in your inbox, zero apps
+- **Conversational onboarding** -- no rigid forms; Alpha naturally collects your info through back-and-forth email
+- **Multiple entry points** -- sign up from the website, or just email alpha@bealphamail.com
+- **Group accountability** -- CC a friend to create accountability pairs
+- **Conversation threading** -- replies stay in the same email thread
+- **Journey summary** -- AI-generated summary of your progress on your account page
+- **Security hardened** -- webhook signature verification, rate limiting, CSRF protection, CSP headers
+- **Bounce/complaint tracking** -- automatically stops emailing invalid addresses
 
 ## Tech Stack
 
@@ -90,6 +92,7 @@ supabase/migrations/002_email_threads.sql
 supabase/migrations/003_pending_emails_and_groups.sql
 supabase/migrations/004_user_summary.sql
 supabase/migrations/005_email_bounce_tracking.sql
+supabase/migrations/006_pending_emails_rls.sql
 ```
 
 Configure Supabase Auth:
@@ -151,7 +154,7 @@ This runs every Sunday at 2pm UTC.
 ```
 src/
 ├── lib/
-│   ├── ai.ts           # Anthropic Claude integration
+│   ├── ai.ts           # Anthropic Claude integration (all AI functions)
 │   ├── resend.ts       # Email sending utilities
 │   ├── security.ts     # Security utilities (rate limit, CSRF, etc.)
 │   └── supabase.ts     # Supabase client
@@ -160,20 +163,22 @@ src/
 │   ├── api/
 │   │   ├── email/
 │   │   │   ├── checkin.ts    # Sunday cron endpoint
-│   │   │   ├── inbound.ts    # Resend webhook for replies
-│   │   │   └── welcome.ts    # Welcome email
+│   │   │   ├── inbound.ts    # Resend inbound webhook (all reply handling)
+│   │   │   ├── onboarding.ts # Sends Alpha's intro email
+│   │   │   └── welcome.ts    # Welcome email after onboarding
 │   │   ├── user/
 │   │   │   ├── delete-account.ts
 │   │   │   ├── link-pending-emails.ts
+│   │   │   ├── signup.ts     # Website signup (AI parses free-form message)
 │   │   │   └── update-summary.ts
 │   │   └── webhook/
-│   │       └── resend-events.ts  # Bounce handling
+│   │       └── resend-events.ts  # Bounce/complaint handling
 │   ├── account.astro
 │   ├── billing.astro
-│   ├── index.astro
+│   ├── index.astro        # Landing page (product preview)
 │   ├── onboarding.astro
 │   ├── signin.astro
-│   └── signup.astro
+│   └── signup.astro       # Compose email signup form
 └── layouts/
     └── BaseLayout.astro
 
@@ -183,7 +188,8 @@ supabase/
     ├── 002_email_threads.sql
     ├── 003_pending_emails_and_groups.sql
     ├── 004_user_summary.sql
-    └── 005_email_bounce_tracking.sql
+    ├── 005_email_bounce_tracking.sql
+    └── 006_pending_emails_rls.sql
 ```
 
 ## Database Schema
@@ -198,12 +204,22 @@ supabase/
 
 ## How the AI Works
 
-1. **parseUserReply** — Extracts progress, completion status, mood, and next goal from user's email
-2. **generateAlphaResponse** — Creates personalized response based on context
-3. **generateConversation** — Handles open-ended conversations
-4. **generateUserSummary** — Creates journey summary for account page
+1. **onboardingConversation** -- natural multi-turn conversation to collect name + goal from new users, with full conversation history
+2. **parseOnboardingReply** -- single-shot extraction of name + goal from free-form text (used by website signup)
+3. **parseUserReply** -- extracts progress, completion status, mood, and next goal from check-in replies
+4. **generateAlphaResponse** -- creates personalized response to check-in replies based on conversation history
+5. **generateConversation** -- handles open-ended conversations when no active goal exists
+6. **generateUserSummary** -- creates journey summary for account page
 
 All AI calls include retry logic (3 attempts with exponential backoff) and fallback emails if AI fails.
+
+## User Flows
+
+**Website signup**: Landing page (`/`) shows a preview of Alpha's Sunday check-in email. Click "Start your first goal" to go to `/signup`, where you write Alpha a free-form email with your name and goal. AI parses it server-side, creates your account, and sends a welcome email.
+
+**Email-first**: Email alpha@bealphamail.com directly. Alpha replies with an intro and a signup link. Once signed up, Alpha chats naturally over email to learn your name and goal -- no rigid forms, just conversation across as many replies as needed.
+
+**CC a friend**: CC alpha@bealphamail.com on an email with a friend to start group accountability.
 
 ## License
 
@@ -215,4 +231,4 @@ PRs welcome! Please open an issue first to discuss what you'd like to change.
 
 ---
 
-Built with ❤️ by [ComputelessComputer](https://github.com/ComputelessComputer)
+Built by [ComputelessComputer](https://github.com/ComputelessComputer)
