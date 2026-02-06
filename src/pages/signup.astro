@@ -47,6 +47,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
               name="email"
               required
               placeholder="you@example.com"
+              autofocus
               class="flex-1 text-sm text-neutral-900 bg-transparent outline-none placeholder:text-neutral-300"
             />
           </div>
@@ -56,33 +57,15 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           </div>
         </div>
 
-        <!-- Email Body: Name + Goal -->
-        <div class="p-5 sm:p-6 bg-white text-sm leading-relaxed space-y-4">
-          <div>
-            <p class="text-neutral-500 mb-2">hey alpha! my name is</p>
-            <input
-              type="text"
-              id="name-input"
-              name="name"
-              required
-              maxlength="50"
-              placeholder="Jamie"
-              class="w-full text-neutral-900 bg-transparent outline-none border-b border-neutral-200 pb-1 focus:border-blue-500 placeholder:text-neutral-300"
-            />
-          </div>
-          <div>
-            <p class="text-neutral-500 mb-2">my goal for this week is to</p>
-            <textarea
-              id="goal-input"
-              name="goal"
-              required
-              maxlength="500"
-              rows="2"
-              placeholder="ship the landing page and get 10 signups"
-              class="w-full text-neutral-900 bg-transparent outline-none border-b border-neutral-200 pb-1 focus:border-blue-500 resize-none placeholder:text-neutral-300"
-            ></textarea>
-          </div>
-          <p class="text-neutral-400 text-xs">hit send and i'll start checking in with you every sunday.</p>
+        <!-- Email Body -->
+        <div class="px-4 py-3 bg-white text-sm leading-relaxed">
+          <textarea
+            id="message-input"
+            name="message"
+            required
+            rows="5"
+            class="w-full text-neutral-900 bg-transparent outline-none resize-none leading-relaxed"
+          >hey alpha, my name is john and my goal for this week is to run three times. looking forward to having you keep me accountable!</textarea>
         </div>
 
         <!-- Error -->
@@ -103,14 +86,11 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 </BaseLayout>
 
 <script>
-  import { supabase } from "../lib/supabase";
-
   const composeForm = document.getElementById("compose-form") as HTMLFormElement;
   const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
   const sendText = document.getElementById("send-text") as HTMLSpanElement;
   const emailInput = document.getElementById("email-input") as HTMLInputElement;
-  const nameInput = document.getElementById("name-input") as HTMLInputElement;
-  const goalInput = document.getElementById("goal-input") as HTMLTextAreaElement;
+  const messageInput = document.getElementById("message-input") as HTMLTextAreaElement;
   const formError = document.getElementById("form-error") as HTMLDivElement;
   const successState = document.getElementById("success-state") as HTMLDivElement;
 
@@ -121,19 +101,10 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     sendText.textContent = "Sending...";
 
     const email = emailInput.value.trim();
-    const name = nameInput.value.trim();
-    const goal = goalInput.value.trim();
+    const message = messageInput.value.trim();
 
-    if (!name || name.length > 50) {
-      formError.textContent = "please enter your name";
-      formError.classList.remove("hidden");
-      sendBtn.disabled = false;
-      sendText.textContent = "Send";
-      return;
-    }
-
-    if (!goal || goal.length > 500) {
-      formError.textContent = "please enter a goal";
+    if (!message) {
+      formError.textContent = "write something to alpha first";
       formError.classList.remove("hidden");
       sendBtn.disabled = false;
       sendText.textContent = "Send";
@@ -141,40 +112,23 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     }
 
     try {
-      // Create user in Supabase
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password: crypto.randomUUID(),
+      const res = await fetch("/api/user/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, message }),
       });
 
-      if (error && !error.message.includes("already registered")) {
-        throw error;
-      }
+      const data = await res.json();
 
-      const userId = data?.user?.id;
-
-      if (userId) {
-        // Update profile with name
-        await supabase.from("profiles").update({
-          first_name: name,
-          onboarded: true,
-        }).eq("user_id", userId);
-
-        // Create goal
-        const nextSunday = new Date();
-        nextSunday.setDate(nextSunday.getDate() + (7 - nextSunday.getDay()));
-        await supabase.from("goals").insert({
-          user_id: userId,
-          description: goal,
-          due_date: nextSunday.toISOString().split("T")[0],
-        });
-
-        // Send welcome email + confirm
-        await fetch("/api/email/welcome", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId }),
-        });
+      if (!res.ok) {
+        if (data.error === "parse_failed") {
+          formError.textContent = data.clarification;
+          formError.classList.remove("hidden");
+          sendBtn.disabled = false;
+          sendText.textContent = "Send";
+          return;
+        }
+        throw new Error(data.error || "something went wrong");
       }
 
       // Show success
