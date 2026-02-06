@@ -6,7 +6,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   <div class="w-full">
     <div class="w-full max-w-2xl mx-auto px-6 sm:px-8 py-12">
       <!-- Header -->
-      <div class="text-center mb-8">
+      <div id="page-header" class="text-center mb-8">
         <h1 class="text-4xl sm:text-5xl font-['Song_Myung'] tracking-tight mb-3">
           let's get started
         </h1>
@@ -70,17 +70,17 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       </form>
 
       <!-- Success (hidden until signup completes) -->
-      <div id="success-state" class="hidden rounded-xl bg-white/80 backdrop-blur-xl shadow-2xl border border-white/20 ring-1 ring-black/5 overflow-hidden w-full text-center p-10 mb-10">
-        <h2 class="text-xl font-medium text-neutral-900 mb-2">check your email.</h2>
-        <p class="text-neutral-600" id="success-text">
+      <div id="success-state" class="hidden text-center">
+        <h1 class="text-4xl sm:text-5xl font-['Song_Myung'] tracking-tight mb-3">check your email.</h1>
+        <p class="text-lg text-neutral-600 mb-6">
           alpha sent you a confirmation link -- click it to prove you're real, then we'll get going.
         </p>
-        <p class="text-neutral-400 text-sm mt-4">
+        <p class="text-neutral-400 text-sm">
           didn't get it? check your spam folder or <button id="resend-link" class="text-blue-600 underline cursor-pointer">resend</button>
         </p>
       </div>
 
-      <p class="text-neutral-500 text-center">free during early access</p>
+      <p id="early-access" class="text-neutral-500 text-center">free during early access</p>
     </div>
   </div>
 </BaseLayout>
@@ -132,11 +132,11 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
   let lastEmail = "";
 
-  async function sendMagicLink(email: string) {
+  async function sendConfirmation(email: string) {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/onboarding`,
+        emailRedirectTo: `${window.location.origin}/welcome`,
       },
     });
 
@@ -161,9 +161,13 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
     try {
       lastEmail = email;
-      await sendMagicLink(email);
+      await sendConfirmation(email);
 
       // Show success
+      const pageHeader = document.getElementById("page-header");
+      const earlyAccess = document.getElementById("early-access");
+      if (pageHeader) pageHeader.classList.add("hidden");
+      if (earlyAccess) earlyAccess.classList.add("hidden");
       composeForm.classList.add("hidden");
       successState.classList.remove("hidden");
     } catch (err: any) {
@@ -180,7 +184,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       if (!lastEmail) return;
       resendLink.textContent = "sending...";
       try {
-        await sendMagicLink(lastEmail);
+        await sendConfirmation(lastEmail);
         resendLink.textContent = "sent!";
         setTimeout(() => { resendLink.textContent = "resend"; }, 3000);
       } catch {

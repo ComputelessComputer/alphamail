@@ -1,0 +1,81 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="AlphaMail — Welcome">
+  <div class="w-full">
+    <div class="w-full max-w-md mx-auto px-6 sm:px-8 py-12">
+      <div id="loading" class="text-center">
+        <h1 class="text-3xl font-['Song_Myung'] tracking-tight mb-4">one sec...</h1>
+      </div>
+
+      <div id="email-sent" class="hidden text-center">
+        <h1 class="text-4xl sm:text-5xl font-['Song_Myung'] tracking-tight mb-3">you're in.</h1>
+        <p class="text-lg text-neutral-600 mb-6">
+          alpha just sent you an email -- reply to it with your name and a goal to get started.
+        </p>
+        <p class="text-neutral-400 text-sm">
+          didn't get it? check your spam folder or <a href="/signup" class="text-blue-600 underline">try again</a>
+        </p>
+      </div>
+
+      <div id="already-onboarded" class="hidden text-center">
+        <p class="text-neutral-600">redirecting to your account...</p>
+      </div>
+
+      <div id="error-state" class="hidden text-center">
+        <h1 class="text-3xl font-['Song_Myung'] tracking-tight mb-4">something went wrong</h1>
+        <p class="text-neutral-600">
+          <a href="/signup" class="text-blue-600 underline">try signing up again</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import { supabase } from "../lib/supabase";
+
+  const loadingDiv = document.getElementById("loading") as HTMLDivElement;
+  const emailSentDiv = document.getElementById("email-sent") as HTMLDivElement;
+  const alreadyOnboardedDiv = document.getElementById("already-onboarded") as HTMLDivElement;
+  const errorDiv = document.getElementById("error-state") as HTMLDivElement;
+
+  async function init() {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      loadingDiv.classList.add("hidden");
+      errorDiv.classList.remove("hidden");
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarded")
+      .eq("user_id", user.id)
+      .single();
+
+    if (profile?.onboarded) {
+      loadingDiv.classList.add("hidden");
+      alreadyOnboardedDiv.classList.remove("hidden");
+      window.location.href = "/account";
+      return;
+    }
+
+    try {
+      await fetch("/api/email/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, userId: user.id }),
+      });
+    } catch (err) {
+      console.error("Failed to send onboarding email:", err);
+    }
+
+    loadingDiv.classList.add("hidden");
+    emailSentDiv.classList.remove("hidden");
+  }
+
+  init();
+</script>

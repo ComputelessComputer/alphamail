@@ -2,87 +2,14 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 ---
 
-<BaseLayout title="AlphaMail — Check Your Email">
+<BaseLayout title="AlphaMail">
   <div class="w-full">
-    <div class="w-full max-w-md mx-auto px-6 sm:px-8 py-12">
-      <!-- Shown to users who already completed onboarding -->
-      <div id="already-onboarded" class="hidden text-center">
-        <p class="text-neutral-600">redirecting to your account...</p>
-      </div>
-
-      <!-- Shown after we send Alpha's onboarding email -->
-      <div id="email-sent" class="hidden text-center">
-        <h1 class="text-3xl font-['Song_Myung'] tracking-tight mb-4">you're confirmed.</h1>
-        <p class="text-neutral-600 text-lg leading-relaxed mb-2">
-          alpha just sent you an email.
-        </p>
-        <p class="text-neutral-600 text-lg leading-relaxed">
-          <strong>reply to it</strong> with your name and a goal to get started.
-        </p>
-        <p class="text-neutral-400 text-sm mt-6">
-          didn't get it? check your spam folder or <a href="/signup" class="text-blue-600 underline">try again</a>
-        </p>
-      </div>
-
-      <!-- Default: waiting for confirmation (not yet authenticated) -->
-      <div id="waiting" class="text-center">
-        <h1 class="text-3xl font-['Song_Myung'] tracking-tight mb-4">check your email</h1>
-        <p class="text-neutral-600 text-lg leading-relaxed">
-          click the confirmation link alpha sent you.
-        </p>
-        <p class="text-neutral-400 text-sm mt-6">
-          didn't get it? check your spam folder or <a href="/signup" class="text-blue-600 underline">try again</a>
-        </p>
-      </div>
+    <div class="w-full max-w-md mx-auto px-6 sm:px-8 py-12 text-center">
+      <p class="text-neutral-600">redirecting...</p>
     </div>
   </div>
 </BaseLayout>
 
 <script>
-  import { supabase } from "../lib/supabase";
-
-  const waitingDiv = document.getElementById("waiting") as HTMLDivElement;
-  const emailSentDiv = document.getElementById("email-sent") as HTMLDivElement;
-  const alreadyOnboardedDiv = document.getElementById("already-onboarded") as HTMLDivElement;
-
-  async function init() {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      // Not authenticated yet -- show "check your email" (default state)
-      return;
-    }
-
-    // User is authenticated -- check onboarding status
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("onboarded")
-      .eq("user_id", user.id)
-      .single();
-
-    if (profile?.onboarded) {
-      // Already onboarded -- redirect to account
-      waitingDiv.classList.add("hidden");
-      alreadyOnboardedDiv.classList.remove("hidden");
-      window.location.href = "/account";
-      return;
-    }
-
-    // Authenticated but not onboarded -- send Alpha's intro email
-    waitingDiv.classList.add("hidden");
-
-    try {
-      await fetch("/api/email/onboarding", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, userId: user.id }),
-      });
-    } catch (err) {
-      console.error("Failed to send onboarding email:", err);
-    }
-
-    emailSentDiv.classList.remove("hidden");
-  }
-
-  init();
+  window.location.href = "/welcome";
 </script>
