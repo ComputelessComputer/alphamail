@@ -32,6 +32,7 @@ export const POST: APIRoute = async ({ request }) => {
     // Create user
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
+      password: crypto.randomUUID(),
       email_confirm: true,
     });
 
