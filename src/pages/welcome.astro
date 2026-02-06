@@ -41,15 +41,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   const alreadyOnboardedDiv = document.getElementById("already-onboarded") as HTMLDivElement;
   const errorDiv = document.getElementById("error-state") as HTMLDivElement;
 
-  async function init() {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      loadingDiv.classList.add("hidden");
-      errorDiv.classList.remove("hidden");
-      return;
-    }
-
+  async function handleUser(user: { id: string; email?: string }) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("onboarded")
@@ -77,5 +69,28 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     emailSentDiv.classList.remove("hidden");
   }
 
-  init();
+  let handled = false;
+
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    if (handled) return;
+    if (session?.user) {
+      handled = true;
+      await handleUser(session.user);
+    }
+  });
+
+  // Fallback: if tokens were already processed before the listener registered
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user && !handled) {
+    handled = true;
+    await handleUser(user);
+  }
+
+  // If still no user after a timeout, show error
+  setTimeout(() => {
+    if (!handled) {
+      loadingDiv.classList.add("hidden");
+      errorDiv.classList.remove("hidden");
+    }
+  }, 5000);
 </script>
