@@ -11,7 +11,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           let's get started
         </h1>
         <p class="text-lg text-neutral-600">
-          tell alpha your name and your first goal.
+          enter your email and alpha will reach out.
         </p>
       </div>
 
@@ -28,7 +28,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
             type="submit"
             id="send-btn"
             formnovalidate
-            class="w-20 h-8 inline-flex items-center justify-center gap-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-t from-blue-600 to-blue-500 shadow-sm hover:shadow-md hover:scale-[102%] active:scale-[98%] transition-all cursor-pointer"
+            class="w-20 h-8 inline-flex items-center justify-center gap-1.5 rounded-md font-mono text-xs font-medium text-white bg-gradient-to-t from-blue-600 to-blue-500 shadow-sm hover:shadow-md hover:scale-[102%] active:scale-[98%] transition-all cursor-pointer"
           >
             <span id="send-text">Send</span>
             <svg id="send-spinner" class="hidden animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -60,15 +60,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           </div>
         </div>
 
-        <!-- Email Body -->
-        <div class="px-4 py-3 bg-white text-sm leading-relaxed">
-          <textarea
-            id="message-input"
-            name="message"
-            required
-            rows="5"
-            class="w-full text-neutral-900 bg-transparent outline-none resize-none leading-relaxed"
-          >hey alpha, my name is john and my goal for this week is to run three times. looking forward to having you keep me accountable!</textarea>
+        <!-- Fixed Email Body -->
+        <div class="px-4 py-3 bg-white text-sm leading-relaxed text-neutral-500">
+          <p>hey alpha, i'd like to get started.</p>
         </div>
 
         <!-- Error (absolute so no layout shift) -->
@@ -77,9 +71,12 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       <!-- Success (hidden until signup completes) -->
       <div id="success-state" class="hidden rounded-xl bg-white/80 backdrop-blur-xl shadow-2xl border border-white/20 ring-1 ring-black/5 overflow-hidden w-full text-center p-10 mb-10">
-        <h2 class="text-xl font-medium text-neutral-900 mb-2">you're in.</h2>
+        <h2 class="text-xl font-medium text-neutral-900 mb-2">check your email.</h2>
         <p class="text-neutral-600" id="success-text">
-          alpha will check in with you every sunday. see you then.
+          alpha sent you a confirmation link -- click it to prove you're real, then we'll get going.
+        </p>
+        <p class="text-neutral-400 text-sm mt-4">
+          didn't get it? check your spam folder or <button id="resend-link" class="text-blue-600 underline cursor-pointer">resend</button>
         </p>
       </div>
 
@@ -89,15 +86,21 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 </BaseLayout>
 
 <script>
+  import { supabase } from "../lib/supabase";
+
   const composeForm = document.getElementById("compose-form") as HTMLFormElement;
   const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
   const sendText = document.getElementById("send-text") as HTMLSpanElement;
   const sendSpinner = document.getElementById("send-spinner") as SVGElement;
   const sendKbd = document.getElementById("send-kbd") as HTMLElement;
   const emailInput = document.getElementById("email-input") as HTMLInputElement;
-  const messageInput = document.getElementById("message-input") as HTMLTextAreaElement;
   const formError = document.getElementById("form-error") as HTMLDivElement;
   const successState = document.getElementById("success-state") as HTMLDivElement;
+
+  // Pre-fill email from query param (e.g., from inbound redirect)
+  const params = new URLSearchParams(window.location.search);
+  const prefillEmail = params.get("email");
+  if (prefillEmail) emailInput.value = prefillEmail;
 
   function setLoading(loading: boolean) {
     sendBtn.disabled = loading;
@@ -127,13 +130,27 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     }
   });
 
+  let lastEmail = "";
+
+  async function sendMagicLink(email: string) {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/onboarding`,
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
   composeForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     formError.classList.add("hidden");
     setLoading(true);
 
     const email = emailInput.value.trim();
-    const message = messageInput.value.trim();
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       formError.textContent = "please enter a valid email";
@@ -142,31 +159,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       return;
     }
 
-    if (!message) {
-      formError.textContent = "write something to alpha first";
-      formError.classList.remove("hidden");
-      setLoading(false);
-      return;
-    }
-
     try {
-      const res = await fetch("/api/user/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, message }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data.error === "parse_failed") {
-          formError.textContent = data.clarification;
-          formError.classList.remove("hidden");
-          setLoading(false);
-          return;
-        }
-        throw new Error(data.error || "something went wrong");
-      }
+      lastEmail = email;
+      await sendMagicLink(email);
 
       // Show success
       composeForm.classList.add("hidden");
@@ -177,4 +172,21 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       setLoading(false);
     }
   });
+
+  // Resend link
+  const resendLink = document.getElementById("resend-link");
+  if (resendLink) {
+    resendLink.addEventListener("click", async () => {
+      if (!lastEmail) return;
+      resendLink.textContent = "sending...";
+      try {
+        await sendMagicLink(lastEmail);
+        resendLink.textContent = "sent!";
+        setTimeout(() => { resendLink.textContent = "resend"; }, 3000);
+      } catch {
+        resendLink.textContent = "failed -- try again";
+        setTimeout(() => { resendLink.textContent = "resend"; }, 3000);
+      }
+    });
+  }
 </script>
