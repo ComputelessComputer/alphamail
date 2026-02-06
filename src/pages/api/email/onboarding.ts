@@ -2,6 +2,31 @@ import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
 import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
 
+const APP_URL = import.meta.env.PUBLIC_APP_URL || "https://bealphamail.com";
+
+export const GET: APIRoute = async ({ url }) => {
+  const token = url.searchParams.get("token");
+  if (!token) {
+    return Response.redirect(`${APP_URL}/signup`, 302);
+  }
+
+  try {
+    const supabase = createServerClient();
+
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      console.error("Token validation failed:", error?.message);
+      return Response.redirect(`${APP_URL}/signup`, 302);
+    }
+
+    await sendOnboardingEmail(supabase, user.email!, user.id);
+    return Response.redirect(`${APP_URL}/welcome?done=1`, 302);
+  } catch (error: any) {
+    console.error("Onboarding GET error:", error);
+    return Response.redirect(`${APP_URL}/welcome?done=1`, 302);
+  }
+};
+
 export const POST: APIRoute = async ({ request }) => {
   try {
     const { email, userId } = await request.json();
@@ -15,7 +40,27 @@ export const POST: APIRoute = async ({ request }) => {
 
     const supabase = createServerClient();
 
-    const html = wrapEmailHtml(`
+    await sendOnboardingEmail(supabase, email, userId);
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    console.error("Onboarding email error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+};
+
+async function sendOnboardingEmail(
+  supabase: ReturnType<typeof createServerClient>,
+  email: string,
+  userId?: string
+) {
+  const html = wrapEmailHtml(`
       <p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
         hey, thanks for confirming -- good to know you're a real human.
       </p>
@@ -87,16 +132,4 @@ keep it simple. hit reply and let's go.
         content: text,
       });
     }
-
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error: any) {
-    console.error("Onboarding email error:", error);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-};
+}

@@ -41,58 +41,64 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   const alreadyOnboardedDiv = document.getElementById("already-onboarded") as HTMLDivElement;
   const errorDiv = document.getElementById("error-state") as HTMLDivElement;
 
-  async function handleUser(user: { id: string; email?: string }) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("onboarded")
-      .eq("user_id", user.id)
-      .single();
+  function showError() {
+    loadingDiv.classList.add("hidden");
+    errorDiv.classList.remove("hidden");
+  }
 
-    if (profile?.onboarded) {
-      loadingDiv.classList.add("hidden");
-      alreadyOnboardedDiv.classList.remove("hidden");
-      window.location.href = "/account";
-      return;
-    }
-
-    try {
-      await fetch("/api/email/onboarding", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, userId: user.id }),
-      });
-    } catch (err) {
-      console.error("Failed to send onboarding email:", err);
-    }
-
+  function showSuccess() {
     loadingDiv.classList.add("hidden");
     emailSentDiv.classList.remove("hidden");
   }
 
   async function init() {
-    // Handle PKCE flow: exchange code from query params for a session
     const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
 
-    if (code) {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-      if (data.session?.user) {
-        await handleUser(data.session.user);
-        return;
-      }
-      if (error) console.error("Code exchange failed:", error.message);
-    }
-
-    // Handle implicit flow: tokens in URL hash (processed by getSession)
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      await handleUser(session.user);
+    // Returning from the server after email was sent
+    if (params.get("done") === "1") {
+      showSuccess();
       return;
     }
 
-    // No session found
-    loadingDiv.classList.add("hidden");
-    errorDiv.classList.remove("hidden");
+    // PKCE flow: exchange code for session, then redirect to server to send email
+    const code = params.get("code");
+    if (code) {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) {
+        console.error("Code exchange failed:", error.message);
+        showError();
+        return;
+      }
+
+      if (data.session) {
+        // Check if already onboarded
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("onboarded")
+          .eq("user_id", data.session.user.id)
+          .single();
+
+        if (profile?.onboarded) {
+          loadingDiv.classList.add("hidden");
+          alreadyOnboardedDiv.classList.remove("hidden");
+          window.location.href = "/account";
+          return;
+        }
+
+        // Redirect to server endpoint -- it validates the token, sends the email, and redirects back
+        window.location.href = `/api/email/onboarding?token=${data.session.access_token}`;
+        return;
+      }
+    }
+
+    // Implicit flow fallback
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      window.location.href = `/api/email/onboarding?token=${session.access_token}`;
+      return;
+    }
+
+    showError();
   }
 
   init();
