@@ -69,28 +69,31 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     emailSentDiv.classList.remove("hidden");
   }
 
-  let handled = false;
+  async function init() {
+    // Handle PKCE flow: exchange code from query params for a session
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
 
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    if (handled) return;
-    if (session?.user) {
-      handled = true;
-      await handleUser(session.user);
+    if (code) {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      if (data.session?.user) {
+        await handleUser(data.session.user);
+        return;
+      }
+      if (error) console.error("Code exchange failed:", error.message);
     }
-  });
 
-  // Fallback: if tokens were already processed before the listener registered
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user && !handled) {
-    handled = true;
-    await handleUser(user);
+    // Handle implicit flow: tokens in URL hash (processed by getSession)
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await handleUser(session.user);
+      return;
+    }
+
+    // No session found
+    loadingDiv.classList.add("hidden");
+    errorDiv.classList.remove("hidden");
   }
 
-  // If still no user after a timeout, show error
-  setTimeout(() => {
-    if (!handled) {
-      loadingDiv.classList.add("hidden");
-      errorDiv.classList.remove("hidden");
-    }
-  }, 5000);
+  init();
 </script>
