@@ -6,8 +6,9 @@ An open-source, AI-powered weekly accountability partner that lives entirely in 
 
 ## How It Works
 
-1. **Sign up** -- write Alpha an email with your name and a goal from the website, or email alpha@bealphamail.com directly
-2. **Conversational onboarding** -- Alpha chats naturally to learn your name and first goal (across multiple emails if needed)
+1. **Sign up** -- enter your email on the website or email alpha@bealphamail.com directly
+2. **Confirm** -- click the magic link Alpha sends to prove you're real
+3. **Conversational onboarding** -- Alpha emails you asking for your name and first goal, and chats naturally across as many replies as needed
 3. **Sunday check-in** -- every Sunday, Alpha emails asking how your goal went
 4. **Reply** -- tell Alpha what happened, set your next goal
 5. **Repeat** -- Alpha remembers your full conversation history and keeps you accountable
