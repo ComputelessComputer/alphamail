@@ -9,18 +9,14 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <h1 class="text-3xl font-['Song_Myung'] tracking-tight mb-4">one sec...</h1>
       </div>
 
-      <div id="email-sent" class="hidden text-center">
-        <h1 class="text-4xl sm:text-5xl font-['Song_Myung'] tracking-tight mb-3">you're in.</h1>
+      <div id="welcome" class="hidden text-center">
+        <h1 class="text-4xl sm:text-5xl font-['Song_Myung'] tracking-tight mb-3">welcome.</h1>
         <p class="text-lg text-neutral-600 mb-6">
           alpha just sent you an email -- reply to it with your name and a goal to get started.
         </p>
         <p class="text-neutral-400 text-sm">
           didn't get it? check your spam folder or <a href="/signup" class="text-blue-600 underline">try again</a>
         </p>
-      </div>
-
-      <div id="already-onboarded" class="hidden text-center">
-        <p class="text-neutral-600">redirecting to your account...</p>
       </div>
 
       <div id="error-state" class="hidden text-center">
@@ -37,64 +33,78 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   import { supabase } from "../lib/supabase";
 
   const loadingDiv = document.getElementById("loading") as HTMLDivElement;
-  const emailSentDiv = document.getElementById("email-sent") as HTMLDivElement;
-  const alreadyOnboardedDiv = document.getElementById("already-onboarded") as HTMLDivElement;
+  const welcomeDiv = document.getElementById("welcome") as HTMLDivElement;
   const errorDiv = document.getElementById("error-state") as HTMLDivElement;
+
+  function showWelcome() {
+    loadingDiv.classList.add("hidden");
+    welcomeDiv.classList.remove("hidden");
+  }
 
   function showError() {
     loadingDiv.classList.add("hidden");
     errorDiv.classList.remove("hidden");
   }
 
-  function showSuccess() {
-    loadingDiv.classList.add("hidden");
-    emailSentDiv.classList.remove("hidden");
+  async function sendOnboardingEmail(token: string) {
+    try {
+      await fetch("/api/email/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+    } catch (err) {
+      console.error("Failed to send onboarding email:", err);
+    }
   }
 
   async function init() {
     const params = new URLSearchParams(window.location.search);
-
-    // Returning from the server after email was sent
-    if (params.get("done") === "1") {
-      showSuccess();
-      return;
-    }
-
-    // PKCE flow: exchange code for session, then redirect to server to send email
     const code = params.get("code");
+
+    // PKCE flow: exchange code for session
     if (code) {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-      if (error) {
-        console.error("Code exchange failed:", error.message);
+      if (error || !data.session) {
+        console.error("Code exchange failed:", error?.message);
         showError();
         return;
       }
 
-      if (data.session) {
-        // Check if already onboarded
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("onboarded")
-          .eq("user_id", data.session.user.id)
-          .single();
+      // Check if already onboarded
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarded")
+        .eq("user_id", data.session.user.id)
+        .single();
 
-        if (profile?.onboarded) {
-          loadingDiv.classList.add("hidden");
-          alreadyOnboardedDiv.classList.remove("hidden");
-          window.location.href = "/account";
-          return;
-        }
-
-        // Redirect to server endpoint -- it validates the token, sends the email, and redirects back
-        window.location.href = `/api/email/onboarding?token=${data.session.access_token}`;
+      if (profile?.onboarded) {
+        window.location.href = "/account";
         return;
       }
+
+      // Show welcome immediately, send onboarding email in background
+      showWelcome();
+      sendOnboardingEmail(data.session.access_token);
+      return;
     }
 
-    // Implicit flow fallback
+    // Fallback: check existing session
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
-      window.location.href = `/api/email/onboarding?token=${session.access_token}`;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarded")
+        .eq("user_id", session.user.id)
+        .single();
+
+      if (profile?.onboarded) {
+        window.location.href = "/account";
+        return;
+      }
+
+      showWelcome();
+      sendOnboardingEmail(session.access_token);
       return;
     }
 

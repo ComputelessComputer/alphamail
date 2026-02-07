@@ -2,44 +2,12 @@ import type { APIRoute } from "astro";
 import { createServerClient } from "../../../lib/supabase";
 import { sendEmail, wrapEmailHtml, wrapEmailText } from "../../../lib/resend";
 
-const APP_URL = import.meta.env.PUBLIC_APP_URL || "https://bealphamail.com";
-
-function redirect(location: string) {
-  return new Response(null, {
-    status: 302,
-    headers: { Location: location },
-  });
-}
-
-export const GET: APIRoute = async ({ url }) => {
-  const token = url.searchParams.get("token");
-  if (!token) {
-    return redirect(`${APP_URL}/signup`);
-  }
-
-  try {
-    const supabase = createServerClient();
-
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) {
-      console.error("Token validation failed:", error?.message);
-      return redirect(`${APP_URL}/signup`);
-    }
-
-    await sendOnboardingEmail(supabase, user.email!, user.id);
-    return redirect(`${APP_URL}/welcome?done=1`);
-  } catch (error: any) {
-    console.error("Onboarding GET error:", error);
-    return redirect(`${APP_URL}/welcome?done=1`);
-  }
-};
-
 export const POST: APIRoute = async ({ request }) => {
   try {
-    const { email, userId } = await request.json();
+    const { token } = await request.json();
 
-    if (!email) {
-      return new Response(JSON.stringify({ error: "Missing email" }), {
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Missing token" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -47,7 +15,17 @@ export const POST: APIRoute = async ({ request }) => {
 
     const supabase = createServerClient();
 
-    await sendOnboardingEmail(supabase, email, userId);
+    // Validate the token server-side
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      console.error("Token validation failed:", error?.message);
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    await sendOnboardingEmail(supabase, user.email!, user.id);
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
