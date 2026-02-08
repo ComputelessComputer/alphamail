@@ -58,6 +58,35 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     }
   }
 
+  let handled = false;
+
+  async function handleSession(session: any) {
+    if (handled || !session) return;
+    handled = true;
+
+    // Check if already onboarded
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarded")
+      .eq("user_id", session.user.id)
+      .single();
+
+    if (profile?.onboarded) {
+      window.location.href = "/account";
+      return;
+    }
+
+    // Show welcome immediately, send onboarding email in background
+    showWelcome();
+    sendOnboardingEmail(session.access_token);
+  }
+
+  // Listen for auth state changes (handles both hash fragment and PKCE flows)
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (session) handleSession(session);
+  });
+
+  // Also try existing session as fallback
   async function init() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
@@ -70,45 +99,20 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         showError();
         return;
       }
-
-      // Check if already onboarded
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("onboarded")
-        .eq("user_id", data.session.user.id)
-        .single();
-
-      if (profile?.onboarded) {
-        window.location.href = "/account";
-        return;
-      }
-
-      // Show welcome immediately, send onboarding email in background
-      showWelcome();
-      sendOnboardingEmail(data.session.access_token);
+      handleSession(data.session);
       return;
     }
 
-    // Fallback: check existing session
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("onboarded")
-        .eq("user_id", session.user.id)
-        .single();
-
-      if (profile?.onboarded) {
-        window.location.href = "/account";
-        return;
+    // Give onAuthStateChange a moment to process hash tokens
+    setTimeout(async () => {
+      if (handled) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        handleSession(session);
+      } else {
+        showError();
       }
-
-      showWelcome();
-      sendOnboardingEmail(session.access_token);
-      return;
-    }
-
-    showError();
+    }, 1500);
   }
 
   init();
