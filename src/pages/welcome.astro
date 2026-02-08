@@ -48,11 +48,17 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
   async function sendOnboardingEmail(token: string) {
     try {
-      await fetch("/api/email/onboarding", {
+      console.log("Sending onboarding email, token length:", token?.length);
+      const res = await fetch("/api/email/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
+      const data = await res.json();
+      console.log("Onboarding email response:", res.status, data);
+      if (!res.ok) {
+        console.error("Onboarding email failed:", data);
+      }
     } catch (err) {
       console.error("Failed to send onboarding email:", err);
     }
@@ -83,6 +89,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
   // Listen for auth state changes (handles both hash fragment and PKCE flows)
   supabase.auth.onAuthStateChange((event, session) => {
+    console.log("Auth state change:", event, !!session);
     if (session) handleSession(session);
   });
 
